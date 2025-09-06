@@ -6,6 +6,5 @@ scikit-learn==1.5.1
 xgboost==3.0.2
 pandas
 python-multipart
-
-
-
+sqlalchemy
+psycopg2-binary
