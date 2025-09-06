@@ -1,0 +1,28 @@
+# Fichiers compilés et caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Environnements virtuels
+.venv/
+venv/
+env/
+.env
+
+# Fichiers de données sensibles ou temporaires
+data/
+*.db
+*.sqlite3
+
+# Fichiers de log
+*.log
+
+# Fichiers et dossiers spécifiques aux OS
+.DS_Store
+.vscode/
+
+# Fichiers spécifiques à des outils
+.ipynb_checkpoints/
+.pytest_cache/
+
