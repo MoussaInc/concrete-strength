@@ -31,12 +31,13 @@ Base = declarative_base()
 # Définition du modèle de la table
 class UsageLog(Base):
     __tablename__ = "usage_logs"
-
     id = Column(Integer, primary_key=True, index=True)
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
     endpoint = Column(String)
-    user_type = Column(String) # 'API' ou 'Dashboard'
-    ip_address = Column(String, nullable=True) # Pour identification des utilisateurs
+    user_type = Column(String)
+    # Pour identification des utilisateurs (les 2 champs ci-dessous)
+    ip_address = Column(String)
+    user_id = Column(String, index=True, nullable=False)  # ✅ champ ajouté 
 
 # Créer la table dans la base de données
 def create_tables():
