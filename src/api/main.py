@@ -38,30 +38,6 @@ ALL_FEATURES = BASE_COLS + DERIVED_COLS
 # ====================================
 # 🔹 NOUVEL ENDPOINT pour le dashboard
 # ====================================
-@app.get("/check_user_id_migration")
-def check_user_id_migration(db: Session = Depends(get_db)):
-    try:
-        result = db.execute(text("SELECT COUNT(*) FROM usage_logs WHERE user_id = 'unknown';"))
-        count = result.scalar()
-        return {"unknown_user_id_count": count}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
-@app.post("/migrate_user_id")
-def migrate_user_id(db: Session = Depends(get_db)):
-    try:
-        # Ajoute la colonne user_id si elle n'existe pas
-        db.execute(text("ALTER TABLE usage_logs ADD COLUMN IF NOT EXISTS user_id VARCHAR(255) DEFAULT 'unknown';"))
-        # Remplit les anciennes lignes avec 'unknown'
-        db.execute(text("UPDATE usage_logs SET user_id = 'unknown' WHERE user_id IS NULL;"))
-        # Crée un index pour accélérer le comptage
-        db.execute(text("CREATE INDEX IF NOT EXISTS idx_usage_logs_user_id ON usage_logs(user_id);"))
-        db.commit()
-        return {"status": "success", "message": "Migration terminée."}
-    except Exception as e:
-        db.rollback()
-        return {"status": "error", "message": str(e)}
-
 
 class DashboardLog(BaseModel):
     user_id: str
