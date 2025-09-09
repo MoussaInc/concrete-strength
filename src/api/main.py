@@ -1,6 +1,7 @@
 from fastapi import (
     FastAPI, File, HTTPException, UploadFile, Depends, Request
 )
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 import traceback
