@@ -3,17 +3,22 @@
 import os
 import streamlit as st
 import requests
+import uuid
 import base64
 from dotenv import load_dotenv
 
 def log_dashboard_usage(api_url):
     """
     Envoie une requête à l'API pour logguer l'utilisation du dashboard.
+    Utilise un user_id unique par session pour compter les utilisateurs uniques.
     """
+    # Générer un user_id unique par session si absent
+    if "user_id" not in st.session_state:
+        st.session_state["user_id"] = str(uuid.uuid4())
     log_endpoint = f"{api_url}/log_dashboard_usage"
+    payload = {"user_id": st.session_state["user_id"]}
     try:
-        # L'adresse IP sera capturée par le middleware de l'API.
-        requests.post(log_endpoint, timeout=5)
+        requests.post(log_endpoint, json=payload, timeout=5)
     except requests.exceptions.RequestException as e:
         # Affiche l'erreur dans la console sans l'afficher à l'utilisateur
         print(f"Erreur lors de la journalisation de l'utilisation du dashboard : {e}")
