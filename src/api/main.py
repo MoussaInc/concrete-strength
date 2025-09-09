@@ -37,44 +37,33 @@ ALL_FEATURES = BASE_COLS + DERIVED_COLS
 # 🔹 NOUVEL ENDPOINT pour le dashboard
 # ====================================
 
+class DashboardLog(BaseModel):
+    user_id: str
+
 @app.post("/log_dashboard_usage")
-async def log_dashboard_usage(
-    request: Request,
-    db: Session = Depends(get_db)
-):
-    """
-    Endpoint appelé par le dashboard pour logguer son utilisation.
-    """
+async def log_dashboard_usage(data: DashboardLog, request: Request, db: Session = Depends(get_db)):
     try:
-        client_ip = request.headers.get("X-Forwarded-For", request.client.host)
         log_entry = UsageLog(
             timestamp=datetime.datetime.utcnow(),
             endpoint="/dashboard_usage",
             user_type="Dashboard",
-            ip_address=client_ip
+            ip_address=request.client.host,
+            user_id=data.user_id
         )
         db.add(log_entry)
         db.commit()
         return {"status": "success", "message": "Dashboard usage logged."}
     except Exception as e:
-        print(f"Erreur de logging: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Erreur de logging: {e}")
 
-
 @app.get("/get_usage_count")
 async def get_usage_count(db: Session = Depends(get_db)):
-    """
-    Retourne le nombre d'utilisateurs uniques (basé sur l'adresse IP).
-    """
     try:
-        # Compte le nombre d'adresses IP uniques dans la table usage_logs
-        unique_users_count = db.query(func.count(UsageLog.ip_address.distinct())).scalar()
+        unique_users_count = db.query(func.count(UsageLog.user_id.distinct())).scalar()
         return {"unique_users_count": unique_users_count}
     except Exception as e:
-        print(f"Erreur lors du comptage des utilisateurs : {e}")
-        raise HTTPException(status_code=500, detail="Erreur interne du serveur lors de la récupération du nombre d'utilisateurs.")
-
+        raise HTTPException(status_code=500, detail="Erreur interne lors du comptage des utilisateurs.")
 
 # ========================
 # 🔹 ENDPOINTS
