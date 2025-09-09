@@ -38,6 +38,14 @@ ALL_FEATURES = BASE_COLS + DERIVED_COLS
 # ====================================
 # 🔹 NOUVEL ENDPOINT pour le dashboard
 # ====================================
+@app.get("/check_user_id_migration")
+def check_user_id_migration(db: Session = Depends(get_db)):
+    try:
+        result = db.execute(text("SELECT COUNT(*) FROM usage_logs WHERE user_id = 'unknown';"))
+        count = result.scalar()
+        return {"unknown_user_id_count": count}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
 
 @app.post("/migrate_user_id")
 def migrate_user_id(db: Session = Depends(get_db)):
