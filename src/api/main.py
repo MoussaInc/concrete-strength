@@ -13,6 +13,7 @@ import os
 
 # Import des scripts existants
 from src.utils.data_utils import apply_constraints
+from src.utils.database import get_db, UsageLog 
 from src.api.model_loader import load_model
 from src.api.schemas import (
     PredictionInput,
@@ -21,9 +22,6 @@ from src.api.schemas import (
     EvaluationInput,
     EvaluationOutput,
 )
-
-# Import des dépendances de BDD
-from src.utils.database import get_db, UsageLog 
 
 app = FastAPI(title="Concrete Strength Prediction API")
 
@@ -70,9 +68,15 @@ async def get_usage_count(db: Session = Depends(get_db)):
 # ========================
 # 🔹 ENDPOINTS
 # ========================
+
 @app.get("/")
 async def root():
     return {"message": "Concrete Strength Prediction API est en ligne 🚀"}
+
+@app.get("/health")
+async def health_check():
+    """Endpoint de santé qui ne dépend d'aucune ressource externe"""
+    return {"status": "healthy", "timestamp": datetime.datetime.utcnow()}
 
 @app.post("/predict", response_model=PredictionOutput)
 async def predict(input_data: PredictionInput, db: Session = Depends(get_db), request: Request = None):
