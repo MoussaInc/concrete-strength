@@ -4,8 +4,10 @@ import os
 import requests
 import pandas as pd
 import streamlit as st
+import time
+import requests
+from requests.exceptions import RequestException
 from dotenv import load_dotenv
-
 from components import (
     load_custom_css,
     display_logo,
@@ -32,24 +34,41 @@ load_custom_css()
 display_logo()
 display_header()
 
+def wait_for_api(api_url, max_retries=30, delay=2):
+    """Attend que l'API soit disponible"""
+    for i in range(max_retries):
+        try:
+            response = requests.get(f"{api_url}/health", timeout=5)
+            if response.status_code == 200:
+                return True
+        except RequestException:
+            if i == 0:  # Premier essai seulement
+                st.info("🔄 Connexion à l'API en cours...")
+            time.sleep(delay)
+    return False
+
 # Charger les variables d'environnement
 load_dotenv()
 API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
+
+if not wait_for_api(API_URL):
+    st.error("❌ Impossible de se connecter à l'API. Veuillez réessayer plus tard.")
+    st.stop()
 
 # Utilisation de st.session_state pour s'assurer que le log n'est fait qu'une seule fois par session
 if "logged" not in st.session_state:
     log_dashboard_usage(API_URL)
     st.session_state["logged"] = True
 
-# Affichage du nombre d'utilisateurs
+# Affichage du nombre d'utilisateurs avec retry
 try:
-    response = requests.get(f"{API_URL}/get_usage_count")
+    response = requests.get(f"{API_URL}/get_usage_count", timeout=10)
     if response.status_code == 200:
         data = response.json()
         user_count = data.get("unique_users_count", "N/A")
         st.sidebar.markdown(f"👥 **Utilisateurs uniques :** `{user_count}`")
     else:
-        st.sidebar.markdown(f"👥 **Utilisateurs uniques :** `Erreur`")
+        st.sidebar.markdown(f"👥 **Utilisateurs uniques :** `Service en cours...`")
 except requests.exceptions.RequestException:
     st.sidebar.markdown(f"👥 **Utilisateurs uniques :** `Non disponible`")
 
