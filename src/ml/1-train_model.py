@@ -1,5 +1,3 @@
-# src/ml/1-train_model.py
-
 import os
 import pandas as pd
 from time import time
@@ -129,8 +127,9 @@ def train_and_evaluate(X_train, X_test, y_train, y_test):
     }
 
     # --- XGBoost ---
+    # Ajout du paramètre tree_method='hist' pour éviter l'utilisation du GPU
     xgb_params = {'model__n_estimators': [50, 100, 200], 'model__max_depth': [3, 5], 'model__learning_rate': [0.05, 0.1, 0.2]}
-    xgb_pipe = make_pipeline(XGBRegressor(random_state=42, eval_metric='rmse'))
+    xgb_pipe = make_pipeline(XGBRegressor(random_state=42, eval_metric='rmse', tree_method='hist'))
     print("\nOptimisation de XGBoost...")
     t_start = time()
     xgb_grid = GridSearchCV(xgb_pipe, xgb_params, cv=3, n_jobs=-1, scoring='neg_root_mean_squared_error')
