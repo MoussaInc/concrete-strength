@@ -55,9 +55,8 @@ services:
     ports:
       - "8501:8501"
     environment:
-      - API_URL=http://api:8000  # Utilise le nom du service, pas le nom du conteneur
+      - API_URL=http://api:8000  
     volumes:
-      # Optionnel: monter le code pour un rechargement à chaud en dev
       - ./src/dashboard:/app/src/dashboard
       - ./src/utils:/app/src/utils
     depends_on:
