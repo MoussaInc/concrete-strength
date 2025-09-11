@@ -29,17 +29,12 @@ services:
     env_file:
       - .env
     environment:
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_NAME: ${POSTGRES_DB}
-      DB_USER: ${POSTGRES_USER}
-      DB_PASSWORD: ${POSTGRES_PASSWORD}
-      # Variables alternatives si votre code utilise PG_*
       PG_HOST: postgres
       PG_PORT: 5432
       PG_USER: ${POSTGRES_USER}
       PG_PASSWORD: ${POSTGRES_PASSWORD}
       PG_DATABASE: ${POSTGRES_DB}
+      API_URL: http://api:8000
     depends_on:
       - postgres
 
@@ -50,18 +45,18 @@ services:
       dockerfile: docker/dashboard/Dockerfile
     container_name: concrete_dashboard
     restart: always
-    env_file:
-      - .env
     ports:
       - "8501:8501"
+    env_file:
+      - .env
     environment:
-      - API_URL=http://api:8000  
+      API_URL: http://api:8000
     volumes:
       - ./src/dashboard:/app/src/dashboard
       - ./src/utils:/app/src/utils
     depends_on:
       - api
-    command: bash -c "python src/dashboard/app.py"
+    command: bash -c "streamlit run src/dashboard/app.py --server.port 8501 --server.address 0.0.0.0"
 
 volumes:
   pg_data:

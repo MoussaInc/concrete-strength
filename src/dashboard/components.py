@@ -7,21 +7,24 @@ import uuid
 import base64
 from dotenv import load_dotenv
 
-def log_dashboard_usage(api_url):
+def log_dashboard_usage(api_url, user_id=None):
     """
-    Envoie une requête à l'API pour logguer l'utilisation du dashboard.
+    Envoie une requête à l'API pour logger l'utilisation du dashboard.
     Utilise un user_id unique par session pour compter les utilisateurs uniques.
     """
     # Générer un user_id unique par session si absent
-    if "user_id" not in st.session_state:
-        st.session_state["user_id"] = str(uuid.uuid4())
+    if user_id is None:
+        if "user_id" not in st.session_state:
+            st.session_state["user_id"] = str(uuid.uuid4())
+        user_id = st.session_state["user_id"]
+
     log_endpoint = f"{api_url}/log_dashboard_usage"
-    payload = {"user_id": st.session_state["user_id"]}
+    payload = {"user_id": user_id}
     try:
         requests.post(log_endpoint, json=payload, timeout=5)
     except requests.exceptions.RequestException as e:
-        # Affiche l'erreur dans la console sans l'afficher à l'utilisateur
         print(f"Erreur lors de la journalisation de l'utilisation du dashboard : {e}")
+
 
 def load_custom_css(css_path="src/dashboard/static/style.css"):
     if os.path.exists(css_path):

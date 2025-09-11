@@ -1,10 +1,8 @@
-# src/dashboard/app.py
-
 import os
-import requests
+import time
+import uuid
 import pandas as pd
 import streamlit as st
-import time
 import requests
 from requests.exceptions import RequestException
 from dotenv import load_dotenv
@@ -19,7 +17,7 @@ from components import (
     call_evaluation_api,
     show_input_instructions,
     display_warnings,
-    log_dashboard_usage, 
+    log_dashboard_usage
 )
 
 # --- Configuration de la page ---
@@ -29,43 +27,47 @@ st.set_page_config(
     page_icon="🧱"
 )
 
-# --- Initialisation ---
+# --- Initialisation visuelle ---
 load_custom_css()
 display_logo()
 display_header()
 
+# --- Charger les variables d'environnement ---
+load_dotenv()
+API_URL = os.getenv("API_URL", "http://localhost:8000")
+st.sidebar.markdown(f"🌐 **API utilisée :** `{API_URL}`")
+
+# --- Génération d'un UUID unique par utilisateur session ---
+if "user_uuid" not in st.session_state:
+    st.session_state["user_uuid"] = str(uuid.uuid4())
+USER_ID = st.session_state["user_uuid"]
+
+# --- Fonction pour attendre que l'API soit prête ---
 def wait_for_api(api_url, max_retries=30, delay=2):
-    """Attend que l'API soit disponible"""
     for i in range(max_retries):
         try:
             response = requests.get(f"{api_url}/health", timeout=5)
             if response.status_code == 200:
                 return True
         except RequestException:
-            if i == 0:  # Premier essai seulement
+            if i == 0:
                 st.info("🔄 Connexion à l'API en cours...")
             time.sleep(delay)
     return False
 
-# Charger les variables d'environnement
-load_dotenv()
-# URL par défaut = Render (production)
-DEFAULT_API_URL = "https://concrete-strength-rz69.onrender.com"
-
-API_URL = os.getenv("API_URL", DEFAULT_API_URL)
-
-st.sidebar.markdown(f"🌐 **API en cours d'utilisation :** `{API_URL}`")
-
 if not wait_for_api(API_URL):
-    st.error("Impossible de se connecter à l'API. Veuillez réessayer plus tard.")
+    st.error("Impossible de se connecter à l'API.")
     st.stop()
 
-# Utilisation de st.session_state pour s'assurer que le log n'est fait qu'une seule fois par session
+# --- Log d'utilisation (une seule fois par session) ---
 if "logged" not in st.session_state:
-    log_dashboard_usage(API_URL)
-    st.session_state["logged"] = True
+    try:
+        log_dashboard_usage(API_URL, USER_ID)
+        st.session_state["logged"] = True
+    except Exception:
+        st.warning("⚠️ Impossible de logger l'utilisation du dashboard.")
 
-# Affichage du nombre d'utilisateurs avec retry
+# --- Affichage du nombre d'utilisateurs ---
 try:
     response = requests.get(f"{API_URL}/get_usage_count", timeout=10)
     if response.status_code == 200:
@@ -73,24 +75,18 @@ try:
         user_count = data.get("unique_users_count", "N/A")
         st.sidebar.markdown(f"👥 **Utilisateurs uniques :** `{user_count}`")
     else:
-        st.sidebar.markdown(f"👥 **Utilisateurs uniques :** `Service en cours...`")
+        st.sidebar.markdown("👥 **Utilisateurs uniques :** `Service en cours...`")
 except requests.exceptions.RequestException:
-    st.sidebar.markdown(f"👥 **Utilisateurs uniques :** `Non disponible`")
+    st.sidebar.markdown("👥 **Utilisateurs uniques :** `Non disponible`")
 
-st.sidebar.markdown(f"🌐 API_URL détectée : `{API_URL}`")
-
+# --- Champs d'entrée pour le modèle ---
 INPUT_NAMES = ["cement", "slag", "fly_ash", "water", "superplasticizer", "coarse_aggregate", "fine_aggregate", "age"]
-
-# Instructions pour batch et évaluation
 show_input_instructions()
 
-# --- Onglets principaux ---
-tab1, tab2, tab3 = st.tabs(["Prédiction individuelle", "Prédiction en batch", "Évaluation modèle"])
+# --- Onglets ---
+tab1, tab2, tab3 = st.tabs(["Prédiction individuelle", "Prédiction batch", "Évaluation modèle"])
 
-
-# --------------------------------------
-# 🔹 Onglet 1 : Prédiction individuelle
-# --------------------------------------
+# --- Onglet 1 : Prédiction individuelle ---
 with tab1:
     st.subheader("Entrez les paramètres du béton")
     features = create_input_form(INPUT_NAMES)
@@ -103,9 +99,7 @@ with tab1:
         else:
             st.error(result["message"])
 
-# -------------------------------
-# 🔹 Onglet 2 : Prédiction batch
-# -------------------------------
+# --- Onglet 2 : Prédiction batch ---
 with tab2:
     st.subheader("Import d’un fichier CSV pour prédiction en lot")
     uploaded = st.file_uploader("Chargez un fichier CSV", type="csv")
@@ -136,10 +130,7 @@ with tab2:
                 else:
                     st.error(result["message"])
 
-
-# -----------------------------------
-# 🔹 Onglet 3 : Évaluation du modèle
-# -----------------------------------
+# --- Onglet 3 : Évaluation du modèle ---
 with tab3:
     st.subheader("Évaluer le modèle avec un fichier CSV")
     st.markdown("Le CSV doit contenir les colonnes de base + une colonne **`true_strength`**")
@@ -168,8 +159,5 @@ with tab3:
                 else:
                     st.error(result["message"])
 
-
-# -------------------------------
-# 🔹 Footer
-# -------------------------------
+# --- Footer ---
 display_footer()

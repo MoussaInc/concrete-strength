@@ -1,34 +1,29 @@
 import os
+import datetime
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
-import datetime
 from dotenv import load_dotenv
 
-# Chargement des variables d'environnement depuis le fichier .env
+# Chargement des variables d'environnement
 load_dotenv()
 
-# Définition de l'URL de la BDD pour la production ou le développement
-# Render définit la variable d'environnement DATABASE_URL automatiquement. En local, on construit l'URL à partir du .env.
-DATABASE_URL = os.environ.get("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:
-    pg_host = os.environ.get("PG_HOST")
-    pg_port = os.environ.get("PG_PORT")
-    pg_user = os.environ.get("PG_USER")
-    pg_password = os.environ.get("PG_PASSWORD")
-    pg_database = os.environ.get("PG_DATABASE")
-    
-    if not all([pg_host, pg_port, pg_user, pg_password, pg_database]):
-        raise ValueError("Les variables de BDD ne sont pas configurées dans le .env ou dans l'environnement.")
-        
+    pg_host = os.getenv("PG_HOST", "127.0.0.1")
+    pg_port = int(os.getenv("PG_PORT", 5432))
+    pg_user = os.getenv("PG_USER", "mballo")
+    pg_password = os.getenv("PG_PASSWORD", "supersecretpassword")
+    pg_database = os.getenv("PG_DATABASE", "concrete_db")
     DATABASE_URL = f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_database}"
 
-# Création du moteur de BDD
+# Création du moteur SQLAlchemy
 engine = create_engine(DATABASE_URL)
-# Création de la base
 Base = declarative_base()
 
-# Définition du modèle de la table
+# -------------------------------
+# Modèle UsageLog
+# -------------------------------
 class UsageLog(Base):
     __tablename__ = "usage_logs"
     id = Column(Integer, primary_key=True, index=True)
@@ -36,17 +31,20 @@ class UsageLog(Base):
     endpoint = Column(String)
     user_type = Column(String)
     ip_address = Column(String)
-    user_id = Column(String, index=True, nullable=False) 
+    user_id = Column(String, index=True, nullable=False)
 
-# Créer la table dans la base de données
+# -------------------------------
+# Création des tables
+# -------------------------------
 def create_tables():
     Base.metadata.create_all(bind=engine)
     print("Tables de BDD créées ou déjà existantes.")
 
-# Création d'une session de BDD
+# -------------------------------
+# Session SQLAlchemy
+# -------------------------------
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# Dépendance pour FastAPI
 def get_db():
     db = SessionLocal()
     try:
@@ -54,5 +52,8 @@ def get_db():
     finally:
         db.close()
 
+# -------------------------------
+# Lancement directement pour creation des tables
+# -------------------------------
 if __name__ == "__main__":
     create_tables()

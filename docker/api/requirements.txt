@@ -1,13 +1,21 @@
+# API / Dashboard
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
-pydantic
+pydantic==2.11.7
+
+# ML
 scikit-learn==1.5.1
 xgboost==3.0.2
+joblib==1.3.2
+numpy==1.24.3
+pandas==2.0.3
+
+# Base de données
 sqlalchemy==2.0.25
 psycopg2-binary==2.9.9
-pandas==2.0.3
-numpy==1.24.3
-scikit-learn==1.3.0
-joblib==1.3.2
+python-multipart==0.0.6
+
+# Utilitaires
 python-dotenv==1.0.0
-python-multipart
+streamlit==1.26.1
+
