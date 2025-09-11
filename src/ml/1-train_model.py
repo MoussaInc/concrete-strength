@@ -164,7 +164,18 @@ def main():
     best_model = results[best_model_name]['model']
     print(f"\nMeilleur modèle : {best_model_name} (RMSE = {results[best_model_name]['rmse']:.2f})")
     os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
+    # Sauvegarde en joblib (backup)
     joblib.dump(best_model, MODEL_PATH)
+    print(f"Modèle sauvegardé dans : {MODEL_PATH}")
+
+    # Si le modèle est un XGBoost, le sauvegarder aussi en JSON
+    if hasattr(best_model.named_steps['model'], "save_model"):
+        from xgboost import XGBRegressor
+        xgb_model = best_model.named_steps['model']
+        MODEL_JSON = os.path.join("models", "best_model.json")
+        xgb_model.save_model(MODEL_JSON)
+        print(f"Modèle XGBoost sauvegardé en JSON dans : {MODEL_JSON}\n")
+    
     print(f"Modèle sauvegardé dans : {MODEL_PATH}\n")
 
 if __name__ == "__main__":
