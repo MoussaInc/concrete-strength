@@ -35,9 +35,8 @@ class UsageLog(Base):
     timestamp = Column(DateTime, default=datetime.datetime.utcnow)
     endpoint = Column(String)
     user_type = Column(String)
-    # Pour identification des utilisateurs (les 2 champs ci-dessous)
     ip_address = Column(String)
-    user_id = Column(String, index=True, nullable=False)  # ✅ champ ajouté 
+    user_id = Column(String, index=True, nullable=False) 
 
 # Créer la table dans la base de données
 def create_tables():

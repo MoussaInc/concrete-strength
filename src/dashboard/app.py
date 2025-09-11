@@ -49,10 +49,15 @@ def wait_for_api(api_url, max_retries=30, delay=2):
 
 # Charger les variables d'environnement
 load_dotenv()
-API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
+# URL par défaut = Render (production)
+DEFAULT_API_URL = "https://concrete-strength-rz69.onrender.com"
+
+API_URL = os.getenv("API_URL", DEFAULT_API_URL)
+
+st.sidebar.markdown(f"🌐 **API en cours d'utilisation :** `{API_URL}`")
 
 if not wait_for_api(API_URL):
-    st.error("❌ Impossible de se connecter à l'API. Veuillez réessayer plus tard.")
+    st.error("Impossible de se connecter à l'API. Veuillez réessayer plus tard.")
     st.stop()
 
 # Utilisation de st.session_state pour s'assurer que le log n'est fait qu'une seule fois par session
