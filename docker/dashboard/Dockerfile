@@ -1,5 +1,5 @@
 # Dockerfile pour Streamlit
-FROM python:3.11-slim
+FROM python:3.11
 
 # --- Répertoire de travail ---
 WORKDIR /app
