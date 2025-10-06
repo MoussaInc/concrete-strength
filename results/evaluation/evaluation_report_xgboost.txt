@@ -1,0 +1,36 @@
+============================================================
+RAPPORT D'ÉVALUATION - XGBoost
+============================================================
+Date: 2025-09-13 13:14:23
+Fichier évalué: data/to_evaluate/test_evaluation.csv
+Nombre d'échantillons: 20
+
+MÉTRIQUES DE PERFORMANCE:
+-------------------------
+RMSE: 16.087 MPa
+MAE:  14.723 MPa
+R²:   0.200
+MAPE: 26.6%
+
+ANALYSE DES RÉSIDUS:
+--------------------
+Moyenne: 13.334 MPa
+Écart-type: 9.000 MPa
+Asymétrie: -0.890
+Kurtosis: 0.440
+Normalité (Shapiro): ✅ Oui (p=0.0728)
+Homoscédasticité: ❌ Non (r=0.314)
+Outliers: 0 (0.0%)
+
+COMPARAISON AVEC L'ENTRAÎNEMENT:
+---------------------------------
+⚠️  RMSE dégradé de 222.0% vs entraînement - Possible overfitting
+⚠️  R² dégradé de 0.708 vs entraînement
+⚠️  Écart notable avec la validation croisée (+180.8%)
+
+RECOMMANDATIONS GÉNÉRALES:
+------------------------
+⚠️  RMSE élevé - Vérifier la qualité des données ou considérer un autre modèle
+⚠️  R² faible - Le modèle explique peu la variance
+
+============================================================

@@ -1,0 +1,7 @@
+# config/database.yaml
+postgres:
+  db_user: mballo
+  db_password: supersecretpassword
+  db_host: localhost
+  db_port: 5432
+  db_name: concrete_db

@@ -275,3 +275,57 @@ footer {
     font-size: 14px;
   }
 }
+
+/* =================== Inputs & Forms =================== */
+input,
+textarea,
+select {
+  transition: var(--transition), background-color 0.25s ease;
+}
+
+input:hover,
+textarea:hover,
+select:hover {
+  background-color: #fdfdfd;
+}
+
+/* =================== Highlight Box Modern =================== */
+.highlight-box {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(6px);
+}
+
+/* =================== Tabs améliorés =================== */
+.stTabs [role="tab"] {
+  border-radius: var(--border-radius) var(--border-radius) 0 0;
+}
+
+.stTabs [role="tab"]:hover:not([aria-selected="true"]) {
+  background-color: rgba(74, 144, 226, 0.12);
+  font-weight: 600;
+}
+
+/* =================== Buttons fluides =================== */
+button,
+.stButton > button {
+  transition: var(--transition), transform 0.2s ease;
+}
+
+button:active,
+.stButton > button:active {
+  transform: scale(0.96);
+}
+
+/* =================== Responsive tweaks =================== */
+@media (max-width: 480px) {
+  .highlight-box {
+    padding: 1.2rem;
+  }
+  
+  input,
+  textarea,
+  select {
+    font-size: 0.95rem;
+    padding: 0.55rem 0.8rem;
+  }
+}

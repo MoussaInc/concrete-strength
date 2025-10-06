@@ -1,37 +1,30 @@
-# 🔹 src/dashboard/components.py
+# src/dashboard/components.py
 
-import os
 import streamlit as st
+import pandas as pd
 import requests
-import uuid
+import os
+from typing import List
 import base64
-from dotenv import load_dotenv
 
-def log_dashboard_usage(api_url, user_id=None):
-    """
-    Envoie une requête à l'API pour logger l'utilisation du dashboard.
-    Utilise un user_id unique par session pour compter les utilisateurs uniques.
-    """
-    # Générer un user_id unique par session si absent
-    if user_id is None:
-        if "user_id" not in st.session_state:
-            st.session_state["user_id"] = str(uuid.uuid4())
-        user_id = st.session_state["user_id"]
+# -----------------------
+# Fonctions visuelles
+# -----------------------
 
-    log_endpoint = f"{api_url}/log_dashboard_usage"
-    payload = {"user_id": user_id}
+def load_custom_css(css_file: str = "src/dashboard/static/style.css"):
+    """Charge un fichier CSS personnalisé pour le dashboard Streamlit."""
     try:
-        requests.post(log_endpoint, json=payload, timeout=5)
-    except requests.exceptions.RequestException as e:
-        print(f"Erreur lors de la journalisation de l'utilisation du dashboard : {e}")
-
-
-def load_custom_css(css_path="src/dashboard/static/style.css"):
-    if os.path.exists(css_path):
-        with open(css_path) as f:
+        with open(css_file) as f:
             st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
-    else:
-        st.warning(f"Fichier CSS non trouvé à : {css_path}")
+    except FileNotFoundError:
+        st.warning("Fichier CSS non trouvé, styles par défaut appliqués.")
+
+def get_base64_of_bin_file(bin_file_path: str) -> str:
+    """Convertit un fichier binaire en string Base64."""
+    with open(bin_file_path, "rb") as f:
+        data = f.read()
+    return base64.b64encode(data).decode()
+
 
 def display_logo(path="src/dashboard/static/images/logo.png", width=100, cv_url="https://www.poussaim.org"):
     if path and os.path.exists(path):
@@ -44,28 +37,20 @@ def display_logo(path="src/dashboard/static/images/logo.png", width=100, cv_url=
     else:
         st.warning("Logo non trouvé.")
 
-def get_base64_of_bin_file(bin_file):
-    with open(bin_file, 'rb') as f:
-        data = f.read()
-    return base64.b64encode(data).decode()
-
-def display_header():
-    st.markdown("""
-    <div style="text-align: center; max-width: 700px; margin: auto;">
-        <h1 style="color: #2E3B4E;">Concrete Strength Predictor</h1>
-        <h4 style="color: #4a5a70; font-style: italic;">Prédiction de la résistance du béton (MPa)</h4>
-    </div>
-    <hr style="border-top: 3px solid #f68b1e; width: 50%; margin: 1rem auto;" />
-    """, unsafe_allow_html=True)
+def display_header(title: str = "Concrete Strength Predictor"):
+    st.markdown(f"<h1 style='text-align:center'>{title}</h1>", unsafe_allow_html=True)
 
 def display_footer():
     st.markdown("""
     <hr style="border-top: 2px solid #2E3B4E"/>
     <div style="text-align:center; color:gray; font-size: 0.9rem;">
-        © 2025 <a href="https://poussaim.org" target="_blank">Moussa MBALLO</a> — Tous droits réservés.
+        <a href="https://poussaim.org" target="_blank">Moussa.Inc</a> — © 2025 Concrete Strength Predictor - Tous droits réservés
     </div>
     """, unsafe_allow_html=True)
 
+# -----------------------
+# Formulaire d'entrée
+# -----------------------
 
 def create_input_form(input_names):
     cols = st.columns(4)
@@ -80,8 +65,11 @@ def create_input_form(input_names):
         inputs.append(val)
     return inputs
 
-
 def show_input_instructions():
+    st.info(
+        "🔹 Entrez les valeurs numériques pour chaque caractéristique du béton.\n"
+        "🔹 Les valeurs doivent être réalistes selon les contraintes physiques."
+    )
     st.markdown("""
 
     ### Pour réaliser une prédiction en batch, veuillez charger un fichier CSV contenant les colonnes suivantes :
@@ -99,77 +87,64 @@ def show_input_instructions():
 
     """)
 
-
-# -------------------------------
-# 🔹 Fonctions utilitaires warnings
-# -------------------------------
-def display_warnings(warnings):
+def display_warnings(warnings: List):
     """
-    Affiche joliment les warnings remontés par l'API.
+    Affiche les warnings dans Streamlit.
+    - Si c'est une liste simple (str), affiche chaque warning.
+    - Si c'est une liste de listes (batch), aplati et affiche tout.
     """
-    if warnings:
-        st.warning("⚠️ Attention :")
-        for w in warnings:
-            st.markdown(f"- {w}")
+    if not warnings:
+        return
+    # Si c'est une liste de listes (batch)
+    if any(isinstance(w, list) for w in warnings):
+        flat = [w for sub in warnings for w in (sub if isinstance(sub, list) else [sub])]
+    else:
+        flat = warnings
+    
+    for w in flat:
+        if isinstance(w, str) and w.strip():
+            st.warning(w)
 
+# -----------------------
+# Logging usage
+# -----------------------
 
-# -------------------------------
-# 🔹 Fonctions API mises à jour
-# -------------------------------
-
-def call_prediction_api(api_url, features):
+def log_dashboard_usage(api_url: str, user_id: str):
     """
-    Requête POST pour prédiction individuelle. Récupère également les warnings.
-    """
-    try:
-        response = requests.post(f"{api_url}/predict", json={"features": features})
-        if response.status_code == 200:
-            data = response.json()
-            return {
-                "success": True,
-                "value": data.get("predicted_strength_MPa"),
-                "warnings": data.get("warnings", [])
-            }
-        else:
-            return {
-                "success": False,
-                "message": response.json().get("detail", f"Erreur API ({response.status_code})")
-            }
-    except Exception as e:
-        return {"success": False, "message": str(e)}
-
-def call_batch_prediction_api(api_url, file):
-    """
-    Requête POST pour prédiction batch. Récupère également les warnings.
+    Log l'utilisation du dashboard auprès de l'API.
     """
     try:
-        files = {"file": (file.name, file.getvalue(), "text/csv")}
-        response = requests.post(f"{api_url}/predict-batch", files=files)
-        if response.status_code == 200:
-            data = response.json()
-            return {
-                "success": True,
-                "predictions": data.get("predicted_strengths_MPa", []),
-                "warnings": data.get("warnings", [])
-            }
-        else:
-            return {
-                "success": False,
-                "message": response.json().get("detail", f"Erreur API ({response.status_code})")
-            }
-    except Exception as e:
-        return {"success": False, "message": str(e)}
+        payload = {"user_id": user_id}
+        requests.post(f"{api_url}/log_dashboard_usage", json=payload, timeout=5)
+    except Exception:
+        st.warning("⚠️ Impossible de logger l'utilisation du dashboard.")
 
-def call_evaluation_api(api_url, eval_list):
-    try:
-        response = requests.post(f"{api_url}/evaluate", json=eval_list)
-        if response.status_code == 200:
-            return {"success": True, "metrics": response.json(), "message": None}
+
+# -----------------------
+# Préparation DataFrame pour batch ou évaluation
+# -----------------------
+
+BASE_COLS = ['cement', 'slag', 'fly_ash', 'water', 'superplasticizer',
+             'coarse_aggregate', 'fine_aggregate', 'age']
+DERIVED_COLS = ['water_cement_ratio', 'binder', 'fine_to_coarse_ratio']
+ALL_FEATURES = BASE_COLS + DERIVED_COLS
+
+def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Prépare un DataFrame pour la prédiction ML :
+    - applique les contraintes physiques
+    - remplit les colonnes manquantes avec 0
+    - réordonne les colonnes
+    """
+    from src.utils.data_utils import apply_constraints
+    df = apply_constraints(df.copy())
+
+    # Compléter colonnes manquantes
+    for col in ALL_FEATURES:
+        if col not in df.columns:
+            df[col] = 0.0
         else:
-            return {
-                "success": False,
-                "metrics": None,
-                "message": response.json().get("detail", f"Erreur API ({response.status_code})")
-            }
-    except Exception as e:
-        return {"success": False, "metrics": None, "message": str(e)}
+            df[col] = df[col].fillna(0.0)
+
+    df = df[ALL_FEATURES]
+    return df

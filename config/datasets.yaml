@@ -1,0 +1,25 @@
+# config/datasets.yaml
+datasets:
+  uci:
+    url: "https://archive.ics.uci.edu/ml/machine-learning-databases/concrete/compressive/Concrete_Data.xls"
+    base: "concrete_data_uci"
+    inner_regex: null
+    notes: "UCI: Excel direct"
+    # ... autres métadonnées ...
+  figshare:
+    url: "https://figshare.unimelb.edu.au/ndownloader/articles/7028369/versions/2"
+    base: "concrete_data_figshare"
+    inner_regex: '(?i)\bDataset2\.xlsx$'
+    notes: "Figshare: ZIP -> plusieurs .xlsx (Dataset2 ciblé)"
+    # ... autres métadonnées ...
+  mendeley:
+    url: "https://prod-dcd-datasets-cache-zipfiles.s3.eu-west-1.amazonaws.com/5wkxzmzwnz-2.zip"
+    base: "concrete_data_mendeley"
+    inner_regex: null
+    notes: "Mendeley: ZIP -> PDF -> extraction tableaux"
+    # ... autres métadonnées ...
+
+paths:
+  raw_dir: "data/raw"
+  docs_dir: "data/raw/docs"
+  log_dir: "logs"

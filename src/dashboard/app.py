@@ -1,10 +1,9 @@
+# src/dashboard/app.py
+
 import os
-import time
 import uuid
 import pandas as pd
 import streamlit as st
-import requests
-from requests.exceptions import RequestException
 from dotenv import load_dotenv
 from components import (
     load_custom_css,
@@ -12,13 +11,11 @@ from components import (
     display_header,
     display_footer,
     create_input_form,
-    call_prediction_api,
-    call_batch_prediction_api,
-    call_evaluation_api,
     show_input_instructions,
     display_warnings,
     log_dashboard_usage
 )
+from src.ml.predict import load_model, prepare_dataframe
 
 # --- Configuration de la page ---
 st.set_page_config(
@@ -37,27 +34,10 @@ load_dotenv()
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 st.sidebar.markdown(f"🌐 **API utilisée :** `{API_URL}`")
 
-# --- Génération d'un UUID unique par utilisateur session ---
+# --- Génération d'un UUID unique par session ---
 if "user_uuid" not in st.session_state:
     st.session_state["user_uuid"] = str(uuid.uuid4())
 USER_ID = st.session_state["user_uuid"]
-
-# --- Fonction pour attendre que l'API soit prête ---
-def wait_for_api(api_url, max_retries=30, delay=2):
-    for i in range(max_retries):
-        try:
-            response = requests.get(f"{api_url}/health", timeout=5)
-            if response.status_code == 200:
-                return True
-        except RequestException:
-            if i == 0:
-                st.info("🔄 Connexion à l'API en cours...")
-            time.sleep(delay)
-    return False
-
-if not wait_for_api(API_URL):
-    st.error("Impossible de se connecter à l'API.")
-    st.stop()
 
 # --- Log d'utilisation (une seule fois par session) ---
 if "logged" not in st.session_state:
@@ -69,6 +49,7 @@ if "logged" not in st.session_state:
 
 # --- Affichage du nombre d'utilisateurs ---
 try:
+    import requests
     response = requests.get(f"{API_URL}/get_usage_count", timeout=10)
     if response.status_code == 200:
         data = response.json()
@@ -80,24 +61,37 @@ except requests.exceptions.RequestException:
     st.sidebar.markdown("👥 **Utilisateurs uniques :** `Non disponible`")
 
 # --- Champs d'entrée pour le modèle ---
-INPUT_NAMES = ["cement", "slag", "fly_ash", "water", "superplasticizer", "coarse_aggregate", "fine_aggregate", "age"]
+BASE_COLS = ['cement', 'slag', 'fly_ash', 'water', 'superplasticizer',
+             'coarse_aggregate', 'fine_aggregate', 'age']
+DERIVED_COLS = ['water_cement_ratio', 'binder', 'fine_to_coarse_ratio']
+ALL_FEATURES = BASE_COLS + DERIVED_COLS
 show_input_instructions()
 
 # --- Onglets ---
 tab1, tab2, tab3 = st.tabs(["Prédiction individuelle", "Prédiction batch", "Évaluation modèle"])
 
+# --- Charger le modèle globalement ---
+MODEL_PATH = "models/best_model.joblib"
+model = load_model(MODEL_PATH)
+
 # --- Onglet 1 : Prédiction individuelle ---
 with tab1:
     st.subheader("Entrez les paramètres du béton")
-    features = create_input_form(INPUT_NAMES)
+    input_features = create_input_form(BASE_COLS)
 
     if st.button("Prédire la résistance"):
-        result = call_prediction_api(API_URL, features)
-        if result["success"]:
-            st.success(f"Résistance prédite : {result['value']:.3f} MPa")
-            display_warnings(result.get("warnings", []))
-        else:
-            st.error(result["message"])
+        try:
+            #payload = {"features": [input_features[col] for col in BASE_COLS]}
+            payload = {"features": input_features}
+            response = requests.post(f"{API_URL}/predict", json=payload, timeout=15)
+            if response.status_code == 200:
+                result = response.json()
+                st.success(f"Résistance prédite : {result['predicted_strength_MPa']:.3f} MPa")
+                display_warnings(result.get("warnings", [])) 
+            else:
+                st.error(f"Erreur API : {response.text}")
+        except Exception as e:
+            st.error(f"Erreur lors de l'appel API : {e}")
 
 # --- Onglet 2 : Prédiction batch ---
 with tab2:
@@ -105,59 +99,75 @@ with tab2:
     uploaded = st.file_uploader("Chargez un fichier CSV", type="csv")
 
     if uploaded:
-        try:
-            df = pd.read_csv(uploaded)
-            st.dataframe(df.head())
-        except Exception as e:
-            st.error(f"Erreur lecture CSV: {e}")
-        else:
-            if st.button("Lancer la prédiction batch"):
-                result = call_batch_prediction_api(API_URL, uploaded)
-                if result["success"]:
-                    df["predicted_strength_MPa"] = result.get("predictions", [])
-                    df["warnings"] = result.get("warnings", [])
-                    st.success(f"{len(result['predictions'])} prédictions générées")
-                    st.dataframe(df)
+        df_batch = pd.read_csv(uploaded)
+        st.dataframe(df_batch.head())
+
+        if st.button("Lancer la prédiction batch"):
+            try:
+                files = {"file": uploaded.getvalue()}
+                response = requests.post(f"{API_URL}/predict-batch", files=files, timeout=30)
+                if response.status_code == 200:
+                    result = response.json()
+                    preds = result["predicted_strengths_MPa"]
+                    warnings_list = result["warnings"]
+
+                    df_batch["predicted_strength"] = preds
+                    df_batch["warnings"] = warnings_list
+
+                    st.success(f"{len(df_batch)} prédictions générées")
+                    st.dataframe(df_batch)
+                    display_warnings(warnings_list)
                     st.download_button(
                         "Télécharger les résultats",
-                        df.to_csv(index=False),
+                        df_batch.to_csv(index=False),
                         "predictions_batch.csv",
                         "text/csv"
                     )
-                    for idx, row_warnings in enumerate(result.get("warnings", [])):
-                        if row_warnings:
-                            st.warning(f"Ligne {idx+1} : {row_warnings}")
                 else:
-                    st.error(result["message"])
+                    st.error(f"Erreur API : {response.text}")
+            except Exception as e:
+                st.error(f"Erreur lors de l'appel API : {e}")
 
-# --- Onglet 3 : Évaluation du modèle ---
+
+# --- Onglet 3 : Évaluation modèle ---
 with tab3:
     st.subheader("Évaluer le modèle avec un fichier CSV")
-    st.markdown("Le CSV doit contenir les colonnes de base + une colonne **`true_strength`**")
+    st.markdown("Le CSV doit contenir les colonnes de base + une colonne **`strength`**")
     eval_file = st.file_uploader("Chargez le fichier CSV d'évaluation", type="csv")
-
+    
     if eval_file:
-        try:
-            df_eval = pd.read_csv(eval_file)
-            st.dataframe(df_eval.head())
-        except Exception as e:
-            st.error(f"Erreur lecture CSV: {e}")
-        else:
-            if st.button("Lancer l'évaluation"):
-                eval_list = [
-                    {"features": row[INPUT_NAMES].tolist(), "true_strength": row["true_strength"]}
-                    for _, row in df_eval.iterrows()
-                ]
-                result = call_evaluation_api(API_URL, eval_list)
-                if result["success"]:
-                    metrics = result["metrics"]
-                    st.success("Évaluation terminée")
-                    st.metric("RMSE", metrics["rmse"])
-                    st.metric("MAE", metrics["mae"])
-                    st.metric("R²", metrics["r2"])
-                    st.write(f"Nombre d'échantillons évalués : {metrics['n_samples']}")
+        df_eval = pd.read_csv(eval_file)
+        st.dataframe(df_eval.head())
+        
+        if st.button("Lancer l'évaluation"):
+            try:
+                if 'strength' not in df_eval.columns:
+                    st.error("Le fichier doit contenir la colonne 'strength'.")
                 else:
-                    st.error(result["message"])
+                    y_true = df_eval['strength']
+                    df_prepared = prepare_dataframe(df_eval)
+                    y_pred = model.predict(df_prepared)
+                    
+                    from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+                    rmse = mean_squared_error(y_true, y_pred, squared=False)
+                    mae = mean_absolute_error(y_true, y_pred)
+                    r2 = r2_score(y_true, y_pred)
+                    
+                    st.metric("RMSE", round(rmse, 3))
+                    st.metric("MAE", round(mae, 3))
+                    st.metric("R²", round(r2, 3))
+                    
+                    df_eval['predicted_strength'] = y_pred
+                    df_eval['abs_error'] = (y_true - y_pred).abs()
+                    
+                    st.download_button(
+                        "Télécharger les résultats d'évaluation",
+                        df_eval.to_csv(index=False),
+                        "evaluation_results.csv",
+                        "text/csv"
+                    )
+            except Exception as e:
+                st.error(f"Erreur lors de l'évaluation : {e}")
 
 # --- Footer ---
 display_footer()
