@@ -24,6 +24,7 @@ def setup_logging(level=logging.INFO):
     Returns:
         logging.Logger: L'objet logger configuré.
     """
+
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger(__name__) 
     logger.setLevel(level)
@@ -48,6 +49,7 @@ def load_data() -> pd.DataFrame:
     Returns:
         pd.DataFrame: Le jeu de données combiné.
     """
+
     input_path = PROCESSED_DIR / "combined_concrete_strength_data.csv"
     if not input_path.exists():
         logger.error(f"Fichier d'entrée non trouvé: {input_path}")
@@ -69,6 +71,7 @@ def handle_duplicates(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Le DataFrame sans duplicats.
     """
+
     initial_rows = len(df)
     
     # On définit les duplicats comme ayant les mêmes quantités d'intrants et le même âge
@@ -91,6 +94,7 @@ def validate_physical_constraints(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Le DataFrame après validation et nettoyage.
     """
+
     initial_rows = len(df)
     essential_cols = ['Cement', 'Water', 'Age']
     
@@ -166,6 +170,7 @@ def handle_outliers_iqr_removal(df: pd.DataFrame, col: str, factor: float = 3.0)
     Returns:
         pd.DataFrame: Le DataFrame après suppression des outliers pour cette colonne.
     """
+    
     Q1 = df[col].quantile(0.25)
     Q3 = df[col].quantile(0.75)
     IQR = Q3 - Q1

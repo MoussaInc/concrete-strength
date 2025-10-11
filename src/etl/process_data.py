@@ -115,6 +115,7 @@ def load_and_process_dataset(file_path: Path, source_name: str) -> pd.DataFrame:
     """
     Charge et traite un dataset (UCI, Figshare, ou Mendeley).
     """
+
     logger.info(f"Chargement et traitement de {source_name}...")
     df = pd.read_csv(file_path)
 
@@ -151,6 +152,7 @@ def merge_datasets(dfs: list[pd.DataFrame]) -> pd.DataFrame:
     """
     Fusionne la liste de DataFrames après harmonisation.
     """
+
     logger.info("Début de la fusion des datasets...")
     
     # Fusion des DataFrames
@@ -178,7 +180,9 @@ def merge_datasets(dfs: list[pd.DataFrame]) -> pd.DataFrame:
     return combined_df
 
 def main():
-    """Fonction principale du pipeline de traitement."""
+    """
+    Fonction principale du pipeline de traitement.
+    """
     
     # Définition des chemins des fichiers bruts
     datasets_info = {
@@ -203,7 +207,7 @@ def main():
         # Sauvegarde
         output_path = PROCESSED_DIR / "combined_concrete_strength_data.csv"
         final_df.to_csv(output_path, index=False)
-        logger.info(f"🎉 Nettoyage et fusion terminés. Fichier sauvegardé dans : {output_path}")
+        logger.info(f"Nettoyage et fusion terminés. Fichier sauvegardé dans : {output_path}")
         
     except Exception as e:
         logger.error(f"Une erreur critique s'est produite lors du traitement : {e}", exc_info=True)

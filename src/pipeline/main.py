@@ -10,7 +10,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 LOG_DIR = PROJECT_ROOT / "logs"
 
 def setup_logging(level=logging.INFO):
-    """Configure le système de logging."""
+    """
+    Configuration du système de logging.
+    """
+
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger(__name__) 
     logger.setLevel(level)
@@ -26,8 +29,6 @@ logger = setup_logging(logging.INFO)
 
 
 # --- Définition des Étapes du Pipeline ---
-
-# Utilisez l'emplacement des scripts dans votre structure de projet
 PIPELINE_STEPS = [
     # Etape 1: Téléchargement des données brutes
     {"name": "Téléchargement des données (download_data.py)", 
@@ -54,6 +55,7 @@ def execute_step(step_info: dict) -> bool:
     """
     Exécute une commande de pipeline et gère les erreurs.
     """
+
     name = step_info["name"]
     command = step_info["command"]
     
@@ -89,6 +91,7 @@ def main():
     """
     Fonction principale qui exécute toutes les étapes du pipeline.
     """
+    
     logger.info("\n=== DÉMARRAGE DU PIPELINE ETL COMPLET ===")
     
     all_success = True
@@ -96,7 +99,7 @@ def main():
     for step in PIPELINE_STEPS:
         if not execute_step(step):
             all_success = False
-            break # Arrête le pipeline après la première erreur
+            break
 
     logger.info("\n=== RÉSULTAT FINAL DU PIPELINE ===")
     if all_success:

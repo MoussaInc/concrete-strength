@@ -1,14 +1,18 @@
-# src/ml/predict.py
+# src/ml/predict.py - Version avec calcul conditionnel des features
 
-import os
 import numpy as np
 import pandas as pd
 import joblib
 import argparse
 import sys
 from pathlib import Path
-from typing import Union
 import logging
+from src.utils.data_utils import (
+    apply_constraints_and_warnings, 
+    calculate_derived_features, 
+    ALL_FEATURES, 
+    BASE_COLS 
+)
 
 # --- Configuration et Chemins ---
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -21,16 +25,12 @@ LOG_DIR = PROJECT_ROOT / "logs"
 MODEL_PATH = MODELS_DIR / "best_model.joblib"
 PREDICTION_PATH = PREDICTIONS_DIR / "predicted_strength.csv"
 
-ALL_FEATURES = [
-    'Cement', 'Slag', 'FlyAsh', 'Water', 'Superplasticizer', 
-    'CoarseAggregate', 'FineAggregate', 'Age', 
-    'Water_Cement_Ratio', 'Binder', 'Fine_to_Coarse_Ratio', 'Total_Material_Mass',
-    'Source'
-]
-
-# --- Configuration du Logging ---
+# --- Configuration du Logging (Identique) ---
 def setup_logging(level=logging.INFO):
-    """Configure le système de logging."""
+    """
+    Configure le système de logging.
+    """
+
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger(__name__) 
     logger.setLevel(level)
@@ -43,9 +43,11 @@ def setup_logging(level=logging.INFO):
 
 logger = setup_logging(logging.INFO)
 
-# --- Fonctions de Chargement et Préparation ---
 def load_model(path: Path):
-    """Charge le pipeline de modèle entraîné."""
+    """
+    Chargement du pipeline du modèle entraîné.
+    """
+
     if not path.exists():
         logger.error(f"Modèle introuvable : {path}")
         sys.exit(1)
@@ -59,83 +61,73 @@ def load_model(path: Path):
 
 def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Vérifie et aligne le DataFrame d'entrée avec les features attendues par le modèle.
-    
-    IMPORTANT : Les calculs de ratios et l'imputation des NaN DOIVENT être faits ICI
-    avant la prédiction, car le modèle (pipeline) s'attend à ces features.
+    Vérifie la présence des features dérivées. Si elles sont absentes, les calcule.
+    Sinon, les conserve, puis aligne sur les 12 features.
     """
     
-    # Calculs des Features Engineering (doit être fait avant le modèle)
-    
-    # Éviter les divisions par zéro : remplacer 0 par NaN pour générer la bonne valeur de ratio
-    cement_safe = df['Cement'].replace(0, np.nan) 
-    coarse_agg_safe = df['CoarseAggregate'].replace(0, np.nan)
-    
-    # Water / Cement Ratio
-    df["Water_Cement_Ratio"] = df["Water"] / cement_safe
-    df["Water_Cement_Ratio"] = df["Water_Cement_Ratio"].replace([np.inf, -np.inf], np.nan)
-    
-    # Binder
-    df["Binder"] = df["Cement"] + df["Slag"] + df["FlyAsh"]
-    
-    # Fine to Coarse Ratio
-    df["Fine_to_Coarse_Ratio"] = df["FineAggregate"] / coarse_agg_safe
-    df["Fine_to_Coarse_Ratio"] = df["Fine_to_Coarse_Ratio"].replace([np.inf, -np.inf], np.nan)
-    
-    # Total Material Mass (pour l'alignement des colonnes)
-    component_cols = ['Cement', 'Slag', 'FlyAsh', 'Water', 'Superplasticizer', 'CoarseAggregate', 'FineAggregate']
-    df['Total_Material_Mass'] = df[[c for c in component_cols if c in df.columns]].sum(axis=1)
+    # Standardisation des noms de colonnes
+    def to_camel_case(s):
+        if '_' in s:
+            s = "".join(x.capitalize() for x in s.lower().split('_'))
+        return s[:1].upper() + s[1:] if s and s[:1].islower() else s
 
-    # Alignement des colonnes
-    missing_cols = [col for col in ALL_FEATURES if col not in df.columns]
-    if missing_cols:
-        logger.warning(f"Colonnes manquantes dans le fichier d'entrée (ajoutées avec NaN) : {missing_cols}")
-        for col in missing_cols:
-            df[col] = np.nan # Ajouter NaN pour que l'Imputer le gère
+    df.columns = [to_camel_case(col) for col in df.columns]
+    logger.info("Noms de colonnes standardisés (CamelCase).")
+
+    # Vérification des colonnes de base (les 8 nécessaires)
+    for col in BASE_COLS:
+        if col not in df.columns:
+            logger.warning(f"Colonne de base '{col}' est manquante. Ajoutée avec NaN.")
+            df[col] = np.nan
     
-    # Réordonner et ne conserver que les features nécessaires
-    df_aligned = df[ALL_FEATURES]
+    df = calculate_derived_features(df)
+    logger.info(f"Features dérivées gérées par le module utils.")
+
+    # Suppression si necessaire des colonnes non désirées et alignement
+    cols_to_drop = [col for col in df.columns if col not in ALL_FEATURES and col != 'Strength']
+    if cols_to_drop:
+        df = df.drop(columns=cols_to_drop, errors='ignore')
+        logger.info(f"Colonnes supprimées car non utilisées à l'entraînement: {cols_to_drop}")
+
+    # Réordonner et ne conserver que les 12 features nécessaires
+    # reindex garantit que les 12 colonnes sont présentes, les manquantes étant NaN (gérées par l'Imputer)
+    df_aligned = df.reindex(columns=ALL_FEATURES, fill_value=np.nan)
     
-    logger.info(f"DataFrame préparé avec {len(df_aligned)} lignes et {len(ALL_FEATURES)} features.")
+    # Vérification finale
+    if len(df_aligned.columns) != 12:
+        logger.error(f"ERREUR D'ALIGNEMENT: Attendu 12 features, obtenu {len(df_aligned.columns)}. Vérifiez ALL_FEATURES.")
+        sys.exit(1)
+            
+    logger.info(f"DataFrame préparé avec {len(df_aligned)} lignes et 12 features.")
 
     return df_aligned
 
 
 def predict_strength(df: pd.DataFrame, model) -> pd.Series:
     """
-    Effectue la prédiction avec le pipeline de modèle chargé.
+    Prédiction avec le pipeline de modèle chargé.
     """
+
     try:
-        # Le pipeline contient : Imputer -> Scaler -> Modèle (gestion des NaN incluse)
-        predictions = model.predict(df)
-        
-        # S'assurer que les prédictions négatives (physiquement impossibles) sont clippées à zéro
+        X_array = df.values 
+        predictions = model.predict(X_array)
+        #predictions = model.predict(df)
         predictions = np.clip(predictions, a_min=0.0, a_max=None)
-        
         return pd.Series(predictions, name="Predicted_Strength")
         
-    except AttributeError as e:
-        # Gestion du changement GPU -> CPU pour XGBoost
-        if "'gpu_id'" in str(e) and hasattr(model.named_steps['model'], 'get_booster'):
-            booster = model.named_steps['model'].get_booster()
-            booster.set_param({'gpu_id': -1})
-            logger.warning("Correction : Définit XGBoost pour fonctionner sur CPU.")
-            predictions = model.predict(df)
-            return pd.Series(np.clip(predictions, a_min=0.0, a_max=None), name="Predicted_Strength")
-        else:
-            logger.error(f"Erreur lors de la prédiction : {e}")
-            raise
+    except Exception as e:
+        logger.error(f"Erreur lors de la prédiction : {e}")
+        raise
 
 def main(input_path: Path) -> None:
     if not input_path.exists():
         logger.error(f"Fichier d'entrée non trouvé : {input_path}")
         sys.exit(1)
 
+    logger.info(f"\n--- Démarrage du script de Prédiction ---")
     logger.info(f"Chargement des données brutes depuis : {input_path.name}")
     df_raw = pd.read_csv(input_path)
     
-    # Le calcul des features engineering DOIT se faire ici pour le fichier brut d'entrée
-    # avant le passage au pipeline du modèle.
     df_prepared = prepare_dataframe(df_raw.copy())
 
     model = load_model(MODEL_PATH)
@@ -143,12 +135,12 @@ def main(input_path: Path) -> None:
     logger.info("Prédictions en cours...")
     predictions = predict_strength(df_prepared, model)
     
-    # Ajouter la colonne de prédiction au DataFrame initial pour la sortie
     df_raw["Predicted_Strength"] = predictions
 
     # --- Sauvegarde ---
     df_raw.to_csv(PREDICTION_PATH, index=False)
     logger.info(f"Prédictions sauvegardées dans : {PREDICTION_PATH.name}")
+    logger.info(f"--- Fin du script de Prédiction ---")
 
 
 if __name__ == "__main__":
@@ -159,9 +151,7 @@ if __name__ == "__main__":
         "--input",
         type=str,
         required=True,
-        help="Chemin vers le fichier CSV contenant les caractéristiques du béton (e.g., data/raw/new_data.csv)."
+        help="Chemin vers le fichier CSV contenant les caractéristiques du béton (e.g., data/to_predict/test_batch.csv)."
     )
     args = parser.parse_args()
-    
-    # Utiliser Path pour gérer les chemins correctement
     main(Path(args.input))

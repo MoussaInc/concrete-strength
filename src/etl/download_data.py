@@ -47,7 +47,7 @@ def setup_logging(level=logging.INFO):
     logger = logging.getLogger(__name__)
     logger.setLevel(level)
     
-    # Évite les handlers multiples si le script est rechargé
+    # Pour éviter les handlers multiples si le script est rechargé
     if not logger.handlers:
         formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
         
@@ -69,7 +69,7 @@ logger = setup_logging()
 
 class MendeleyPDFExtractor:
     """
-    Gère l'extraction très spécifique du PDF du dataset Mendeley (IIT Bhubaneswar)
+    Gestion de l'extraction très spécifique du PDF du dataset Mendeley (IIT Bhubaneswar)
     """
     
     def __init__(self, logger):
@@ -77,17 +77,26 @@ class MendeleyPDFExtractor:
         self.expected_columns = 17
     
     def clean_row(self, row: List) -> List[str]:
-        """Nettoie une ligne de données"""
+        """
+        Nettoie d'une ligne de données
+        """
+
         return [str(cell or '').strip().replace('\n', ' ') for cell in row if cell not in (None, '')]
 
     def is_header_row(self, row: List[str]) -> bool:
-        """Détecte si une ligne est un en-tête pour les pages suivantes"""
+        """
+        Détecte si une ligne est un en-tête pour les pages suivantes
+        """
+
         header_keywords = ['serial', 'cement', 'flyash', 'ggbs', 'water', 'age', 'cs', 'tcm']
         row_str = ' '.join(row).lower()
         return any(keyword in row_str for keyword in header_keywords)
 
     def __call__(self, pdf_path: Path, out_csv_path: Path) -> bool:
-        """Exécute l'extraction avancée"""
+        """
+        Exécute l'extraction avancée
+        """
+
         try:
             import pdfplumber
             
@@ -145,7 +154,10 @@ class MendeleyPDFExtractor:
             return False
 
     def create_final_dataframe(self, header: List[str], all_rows: List[List[str]], out_csv_path: Path) -> bool:
-        """Crée le DataFrame final et le sauvegarde (similaire à l'original)"""
+        """
+        Crée le DataFrame final et le sauvegarde (similaire à l'original)
+        """
+
         try:
             # Nettoyage des données (implémenter la logique de normalisation et de conversion types)
             max_cols = len(header)
@@ -208,7 +220,10 @@ class DataDownloader:
     # --- Utilitaires ---
     
     def _check_optional_dependencies(self) -> Dict[str, bool]:
-        """Vérifie et gère l'installation des dépendances optionnelles (intégré à la classe)"""
+        """
+        Vérification et gestion l'installation des dépendances optionnelles (intégré à la classe)
+        """
+
         optional_deps = {
             'tabula': False, 
             'pdfplumber': False, 
@@ -225,7 +240,7 @@ class DataDownloader:
                 missing.append(import_name)
                 
         if missing:
-            self.logger.warning(f"⚠️ Dépendances manquantes : {', '.join(missing)}")
+            self.logger.warning(f"Dépendances manquantes : {', '.join(missing)}")
             
             # --- Ajouter l'option d'installation (CLI) ---
             response = input("Souhaitez-vous installer les dépendances manquantes (y/N)? ").strip().lower()
@@ -233,7 +248,7 @@ class DataDownloader:
                 try:
                     import subprocess
                     subprocess.run([sys.executable, '-m', 'pip', 'install'] + missing, check=True)
-                    self.logger.info("✅ Dépendances installées.")
+                    self.logger.info("Dépendances installées.")
                     # Re-vérification après installation
                     for import_name in missing:
                         try:
@@ -242,23 +257,28 @@ class DataDownloader:
                         except ImportError:
                             pass
                 except subprocess.CalledProcessError as e:
-                    self.logger.error(f"❌ Erreur lors de l'installation : {e}")
+                    self.logger.error(f"Erreur lors de l'installation : {e}")
                     
         return optional_deps
         
     def _save_bytes(self, path: Path, content: bytes):
-        """Sauvegarde des bytes dans un fichier"""
+        """
+        Sauvegarde des bytes dans un fichier
+        """
+
         with open(path, "wb") as f:
             f.write(content)
         self.logger.debug(f"Fichier sauvegardé : {path.name}")
 
     def _should_download(self, name: str, meta: dict, force: bool = False) -> bool:
-        """Vérifie si le téléchargement est nécessaire"""
+        """
+        Vérifie si le téléchargement est nécessaire
+        """
+
         if force:
             return True
             
         base = meta["base"]
-        # Utiliser les chemins Path pour la vérification
         expected_files = [
             self.raw_dir / f"{base}.csv",
             self.raw_dir / f"{base}_from_pdf.csv",
@@ -275,7 +295,10 @@ class DataDownloader:
     # --- Téléchargement et Détection ---
 
     def _get_filename_from_headers(self, resp, fallback: str) -> str:
-        """Extrait le filename depuis les headers HTTP"""
+        """
+        Extrait le filename depuis les headers HTTP
+        """
+
         cd = resp.headers.get("Content-Disposition", "")
         match = re.search(r'filename\*?=(?:UTF-8\'\')?"?([^";]+)"?', cd)
         if match:
@@ -284,7 +307,10 @@ class DataDownloader:
         return tail or fallback
 
     def _detect_ext(self, name_or_url: str, content_type: str) -> str:
-        """Détecte l'extension du fichier (Identique à l'original, très bien)"""
+        """
+        Détecte l'extension du fichier (Identique à l'original, très bien)
+        """
+
         name_lower = (name_or_url or "").lower()
         if name_lower.endswith((".csv", ".xlsx", ".xls", ".zip", ".pdf")):
             return name_lower.split('.')[-1]
@@ -298,7 +324,10 @@ class DataDownloader:
         return ""
 
     def download(self, url: str, fallback_name: str) -> tuple:
-        """Télécharge un fichier avec gestion d'erreurs (Identique à l'original)"""
+        """
+        Télécharge un fichier avec gestion d'erreurs (Identique à l'original)
+        """
+
         headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
         resp = requests.get(url, headers=headers, timeout=120)
         resp.raise_for_status()
@@ -306,33 +335,39 @@ class DataDownloader:
         filename = self._get_filename_from_headers(resp, fallback=fallback_name)
         ext = self._detect_ext(filename or url, resp.headers.get("Content-Type", ""))
         
-        self.logger.info(f"✅ Téléchargement réussi : {filename} ({len(resp.content)} bytes, type: {ext})")
+        self.logger.info(f"Téléchargement réussi : {filename} ({len(resp.content)} bytes, type: {ext})")
         return filename, resp.content, ext, resp.headers.get("Content-Type", "")
 
     # --- Extraction et Conversion ---
 
     def _excel_to_csv_bytes(self, excel_bytes: bytes, ext: str) -> bytes:
-        """Convertit Excel en CSV"""
+        """
+        Convertion de Excel --> en CSV
+        """
+
         try:
             bio = io.BytesIO(excel_bytes)
             # Utilisation des dépendances pour garantir la lecture
             engine = 'openpyxl' if ext == 'xlsx' and self.deps.get('openpyxl') else ('xlrd' if self.deps.get('xlrd') else None)
             
             if not engine:
-                self.logger.error("❌ Moteur de lecture Excel manquant (openpyxl/xlrd).")
+                self.logger.error("Moteur de lecture Excel manquant (openpyxl/xlrd).")
                 raise ImportError("Moteur Excel manquant")
                 
             df = pd.read_excel(bio, engine=engine)
             out = io.StringIO()
             df.to_csv(out, index=False)
-            self.logger.info(f"✅ Excel converti en CSV ({len(df)} lignes)")
+            self.logger.info(f"Excel converti en CSV ({len(df)} lignes)")
             return out.getvalue().encode("utf-8")
         except Exception as e:
-            self.logger.error(f"❌ Erreur conversion Excel : {e}")
+            self.logger.error(f"Erreur conversion Excel : {e}")
             raise
 
     def _extract_with_tabula_fallback(self, pdf_path: Path, out_csv_path: Path) -> bool:
-        """Fallback avec Tabula pour l'extraction PDF (Simplifié)"""
+        """
+        Fallback avec Tabula pour l'extraction PDF (Simplifié)
+        """
+
         if not self.deps.get('tabula'):
             self.logger.warning("Tabula non disponible.")
             return False
@@ -352,7 +387,7 @@ class DataDownloader:
                 
                 if len(combined_df) > 3:
                     combined_df.to_csv(out_csv_path, index=False)
-                    self.logger.info(f"✅ Tabula réussi : {len(combined_df)} lignes")
+                    self.logger.info(f"Tabula réussi : {len(combined_df)} lignes")
                     return True
                 
             return False
@@ -361,21 +396,24 @@ class DataDownloader:
             return False
             
     def extract_tables_from_pdf(self, pdf_path: Path, out_csv_path: Path, name: str) -> bool:
-        """Fonction principale d'extraction PDF avec stratégies"""
+        """
+        Fonction principale d'extraction PDF avec stratégies
+        """
+
         self.logger.info(f"Extraction PDF : {pdf_path.name}")
         
-        # 1. Extraction Avancée (Spécifique Mendeley)
+        # Extraction Avancée (Spécifique Mendeley)
         if name.lower() == "mendeley" and self.deps.get('pdfplumber'):
             if self.mendeley_extractor(pdf_path, out_csv_path):
                 return True
 
-        # 2. Fallback Tabula
+        # Fallback Tabula
         if self._extract_with_tabula_fallback(pdf_path, out_csv_path):
             return True
         
-        # 3. Dernier recours : pdfplumber basique (non implémenté ici pour concision, car la logique avancée est dans MendeleyExtractor)
+        # Dernier recours : pdfplumber basique (non implémenté ici pour concision, car la logique avancée est dans MendeleyExtractor)
         
-        self.logger.error("❌ Aucune méthode d'extraction PDF n'a fonctionné")
+        self.logger.error("Aucune méthode d'extraction PDF n'a fonctionné")
         return False
 
     # --- Gestion des Archives ZIP ---
@@ -398,7 +436,10 @@ class DataDownloader:
         return candidates[0] if candidates else None
 
     def _extract_from_zip(self, zip_bytes: bytes, base: str, inner_regex: Optional[str], prefer_pdf=False, name="") -> Dict[str, Any]:
-        """Extrait le contenu d'une archive ZIP"""
+        """
+        Extrait le contenu d'une archive ZIP
+        """
+
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as zf:
             names = zf.namelist()
             self.logger.info(f"Contenu ZIP : {names[:5]}...")
@@ -424,7 +465,10 @@ class DataDownloader:
             return self._save_zip_for_inspection(zip_bytes, base, names)
 
     def _extract_table_from_zip(self, zf, table_target: str, base: str) -> Dict[str, Any]:
-        """Extrait et convertit un tableau depuis ZIP"""
+        """
+        Extrait et convertit un tableau depuis ZIP
+        """
+
         with zf.open(table_target, "r") as f:
             data = f.read()
         
@@ -440,7 +484,10 @@ class DataDownloader:
             return {"kind": "excel", "path": out_csv}
 
     def _extract_pdf_from_zip(self, zf, pdf_target: str, base: str, name: str) -> Dict[str, Any]:
-        """Extrait un PDF depuis ZIP et tente l'extraction des tableaux"""
+        """
+        Extrait un PDF depuis ZIP et tente l'extraction des tableaux
+        """
+
         with zf.open(pdf_target, "r") as f:
             pdf_data = f.read()
         
@@ -452,11 +499,14 @@ class DataDownloader:
         if self.extract_tables_from_pdf(out_pdf, out_csv, name):
             return {"kind": "pdf->csv", "path": out_csv}
         else:
-            self.logger.info(f"ℹ️ PDF sauvegardé (extraction auto échouée) : {out_pdf.name}")
+            self.logger.info(f"PDF sauvegardé (extraction auto échouée) : {out_pdf.name}")
             return {"kind": "pdf", "path": out_pdf}
 
     def _save_zip_for_inspection(self, zip_bytes: bytes, base: str, names: List[str]) -> Dict[str, Any]:
-        """Sauvegarde l'archive pour inspection manuelle"""
+        """
+        Sauvegarde l'archive pour inspection manuelle
+        """
+
         zip_out = self.raw_dir / f"{base}_original.zip"
         self._save_bytes(zip_out, zip_bytes)
         
@@ -464,36 +514,39 @@ class DataDownloader:
         with open(manifest, "w", encoding="utf-8") as mf:
             mf.write("\n".join(names))
         
-        self.logger.warning(f"⚠️ Aucun fichier exploitable, archive sauvegardée : {zip_out.name}")
+        self.logger.warning(f"Aucun fichier exploitable, archive sauvegardée : {zip_out.name}")
         return {"kind": "none", "path": zip_out}
 
     # --- Pipeline principal ---
 
     def process_dataset(self, name: str, meta: dict, force: bool = False):
-        """Traite un dataset complet"""
+        """
+        Traite un dataset complet
+        """
+
         try:
             if not self._should_download(name, meta, force):
-                self.logger.info(f"⏭️ Dataset {name} ignoré (fichiers existants)")
+                self.logger.info(f"Dataset {name} ignoré (fichiers existants)")
                 return True
                 
             base = meta["base"]
             url = meta["url"]
             inner_regex = meta.get("inner_regex")
             
-            self.logger.info(f"📥 Traitement dataset {name.upper()}...")
+            self.logger.info(f"Traitement dataset {name.upper()}...")
             filename, content, ext, ctype = self.download(url, fallback_name=f"{base}")
 
             if ext == "csv":
                 out_csv = self.raw_dir / f"{base}.csv"
                 self._save_bytes(out_csv, content)
-                self.logger.info(f"✅ CSV sauvegardé : {out_csv.name}")
+                self.logger.info(f"CSV sauvegardé : {out_csv.name}")
                 return True
 
             elif ext in ("xls", "xlsx"):
                 out_csv = self.raw_dir / f"{base}.csv"
                 csv_bytes = self._excel_to_csv_bytes(content, ext)
                 self._save_bytes(out_csv, csv_bytes)
-                self.logger.info(f"✅ Excel converti en CSV : {out_csv.name}")
+                self.logger.info(f"Excel converti en CSV : {out_csv.name}")
                 return True
 
             elif ext == "pdf":
@@ -501,9 +554,9 @@ class DataDownloader:
                 self._save_bytes(out_pdf, content)
                 out_csv = self.raw_dir / f"{base}_from_pdf.csv"
                 if self.extract_tables_from_pdf(out_pdf, out_csv, name):
-                    self.logger.info(f"✅ PDF -> CSV réussi : {out_csv.name}")
+                    self.logger.info(f"PDF -> CSV réussi : {out_csv.name}")
                 else:
-                    self.logger.info(f"ℹ️ PDF sauvegardé (extraction auto échouée) : {out_pdf.name}")
+                    self.logger.info(f"PDF sauvegardé (extraction auto échouée) : {out_pdf.name}")
                 return True
 
             elif ext == "zip":
@@ -514,25 +567,28 @@ class DataDownloader:
                 path = result["path"].name if isinstance(result["path"], Path) else result["path"]
                 
                 if kind in ("csv", "excel", "pdf->csv"):
-                    self.logger.info(f"✅ Extraction ZIP réussie : {path}")
+                    self.logger.info(f"Extraction ZIP réussie : {path}")
                 elif kind == "pdf":
-                    self.logger.info(f"ℹ️ ZIP -> PDF : {path}")
+                    self.logger.info(f"ZIP -> PDF : {path}")
                 else:
-                    self.logger.warning(f"⚠️ ZIP nécessite inspection : {path}")
+                    self.logger.warning(f"ZIP nécessite inspection : {path}")
                 return True
 
             else:
-                self.logger.error(f"❌ Format non géré : {ext} (Content-Type: {ctype})")
+                self.logger.error(f"Format non géré : {ext} (Content-Type: {ctype})")
                 return False
                 
         except Exception as e:
-            self.logger.error(f"❌ Erreur traitement dataset {name} : {e}")
+            self.logger.error(f"Erreur traitement dataset {name} : {e}")
             return False
 
 # --- Interface utilisateur et main ---
 
 def interactive_mode(datasets: Dict) -> List[str]:
-    """Mode interactif pour la sélection des datasets"""
+    """
+    Mode interactif pour la sélection des datasets
+    """
+
     print("\n=== Téléchargement des datasets Béton ===")
     
     keys = list(datasets.keys())
@@ -552,22 +608,20 @@ def interactive_mode(datasets: Dict) -> List[str]:
         elif choice_int == len(keys) + 2:
             return []
             
-    print("❌ Choix invalide.")
+    print("Choix invalide.")
     return interactive_mode(datasets)
 
 
 def main():
-    """Fonction principale"""
+    """
+    Fonction principale
+    """
+
     parser = argparse.ArgumentParser(description="Télécharge les datasets Béton à partir de config/datasets.yaml")
-    parser.add_argument('--dataset', nargs='+', choices=list(DATASETS.keys()) + ['all'],
-                       help='Datasets à télécharger (uci, figshare, mendeley, all)')
-    parser.add_argument('--force', action='store_true',
-                       help='Forcer le retéléchargement')
-    parser.add_argument('--log-level', default='INFO',
-                       choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
-                       help='Niveau de logging')
-    parser.add_argument('--interactive', action='store_true',
-                       help='Mode interactif')
+    parser.add_argument('--dataset', nargs='+', choices=list(DATASETS.keys()) + ['all'], help='Datasets à télécharger (uci, figshare, mendeley, all)')
+    parser.add_argument('--force', action='store_true', help='Forcer le retéléchargement')
+    parser.add_argument('--log-level', default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'], help='Niveau de logging')
+    parser.add_argument('--interactive', action='store_true', help='Mode interactif')
     
     args = parser.parse_args()
     
@@ -604,7 +658,7 @@ def main():
         return
     
     # Traitement
-    logger.info(f"🚀 Début du traitement des datasets : {datasets_to_process}")
+    logger.info(f"Début du traitement des datasets : {datasets_to_process}")
     success_count = 0
     
     for dataset in datasets_to_process:
@@ -612,7 +666,7 @@ def main():
             success_count += 1
     
     # Résumé
-    logger.info(f"\n📊 RÉSUMÉ : {success_count}/{len(datasets_to_process)} datasets traités avec succès")
+    logger.info(f"\nRÉSUMÉ : {success_count}/{len(datasets_to_process)} datasets traités avec succès")
 
 if __name__ == "__main__":
     main()

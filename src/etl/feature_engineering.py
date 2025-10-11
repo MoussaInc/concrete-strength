@@ -24,6 +24,7 @@ def setup_logging(level=logging.INFO):
     Returns:
         logging.Logger: L'objet logger configuré.
     """
+
     LOG_DIR.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger(__name__) 
     logger.setLevel(level)
@@ -39,16 +40,9 @@ logger = setup_logging(logging.INFO)
 
 # --- Colonnes numériques essentielles pour le traitement ---
 # Note : Ces colonnes doivent exister après l'étape clean_data.py
-NUMERIC_COLS = [
-    'Cement', 'Slag', 'FlyAsh', 'Water', 'Superplasticizer', 
-    'CoarseAggregate', 'FineAggregate', 'Age', 'Strength'
-]
+NUMERIC_COLS = ['Cement', 'Slag', 'FlyAsh', 'Water', 'Superplasticizer', 'CoarseAggregate', 'FineAggregate', 'Age', 'Strength']
 # Liste des colonnes de composants pour le calcul du Binder et de la masse totale
-COMPONENT_COLS = [
-    'Cement', 'Slag', 'FlyAsh', 'Water', 'Superplasticizer', 
-    'CoarseAggregate', 'FineAggregate'
-]
-
+COMPONENT_COLS = ['Cement', 'Slag', 'FlyAsh', 'Water', 'Superplasticizer', 'CoarseAggregate', 'FineAggregate']
 
 def load_data(path: Path) -> pd.DataFrame:
     """
@@ -60,6 +54,7 @@ def load_data(path: Path) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Le jeu de données chargé.
     """
+
     logger.info(f"Lecture du fichier d'entrée propre : {path.name}")
     if not path.exists():
         logger.error(f"Fichier non trouvé. Assurez-vous que '3-clean_data.py' a été exécuté.")
@@ -71,7 +66,7 @@ def load_data(path: Path) -> pd.DataFrame:
 def treat_outliers_iqr_clipping(df: pd.DataFrame) -> pd.DataFrame:
     """
     Traite les outliers des colonnes numériques par 'clipping' (plafonnement)
-    aux bornes IQR [Q1 - 1.5*IQR, Q3 + 1.5*IQR].
+    aux bornes IQR [Q1 - 3*IQR, Q3 + 3*IQR].
     
     Cette méthode est préférée à la suppression des lignes pour préserver les données.
     Les bornes inférieures sont plafonnées à 0 pour les matériaux.
@@ -82,6 +77,7 @@ def treat_outliers_iqr_clipping(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Le DataFrame avec outliers modérés.
     """
+
     logger.info("Traitement des outliers par 'clipping' (méthode IQR 1.5)...")
 
     for col in [c for c in NUMERIC_COLS if c in df.columns]:
@@ -92,8 +88,8 @@ def treat_outliers_iqr_clipping(df: pd.DataFrame) -> pd.DataFrame:
         Q1 = df[col].quantile(0.25)
         Q3 = df[col].quantile(0.75)
         IQR = Q3 - Q1
-        lower_bound = Q1 - 1.5 * IQR
-        upper_bound = Q3 + 1.5 * IQR
+        lower_bound = Q1 - 3.0 * IQR
+        upper_bound = Q3 + 3.0 * IQR
         
         # S'assurer que les quantités de matériaux et l'âge ne sont pas clippés sous zéro
         lower_bound = max(0, lower_bound)
@@ -109,8 +105,7 @@ def treat_outliers_iqr_clipping(df: pd.DataFrame) -> pd.DataFrame:
 
 def create_features(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Crée les features d'ingénierie essentielles pour la prédiction de la résistance
-    du béton.
+    Création de features essentielles pour la prédiction de la résistance du béton.
 
     1. Ratio Eau/Ciment (Water_Cement_Ratio)
     2. Liant Total (Binder)
@@ -123,6 +118,7 @@ def create_features(df: pd.DataFrame) -> pd.DataFrame:
     Returns:
         pd.DataFrame: Le DataFrame enrichi de nouvelles features.
     """
+
     logger.info("Ingénierie de features (ratios et sommes)...")
 
     # --- Ratio Eau / Ciment ---
@@ -156,12 +152,15 @@ def save_data(df: pd.DataFrame, path: Path):
         df (pd.DataFrame): Le DataFrame final.
         path (Path): Chemin de sortie du CSV.
     """
+    
     df.to_csv(path, index=False)
     logger.info(f"Données avec features sauvegardées dans : {path}")
 
 
 def main():
-    """Fonction principale du script d'ingénierie de features."""
+    """
+    Fonction principale du script d'ingénierie de features.
+    """
     
     input_path = INPUT_DIR / "final_concrete_dataset.csv"
     output_path = OUTPUT_DIR / "engineered_concrete_dataset.csv"

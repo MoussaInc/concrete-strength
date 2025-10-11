@@ -16,7 +16,7 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "database.yaml"
 LOG_DIR = PROJECT_ROOT / "logs"
 
 # Nom de la table cible dans PostgreSQL
-TABLE_NAME = "engineered_concrete_data"
+TABLE_NAME = "engineered_concrete_data" 
 TEMP_CSV_PATH = PROJECT_ROOT / "data" / "temp_concrete_upload.csv"
 
 # --- Configuration du Logging ---
