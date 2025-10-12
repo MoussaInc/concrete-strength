@@ -1,4 +1,4 @@
-# src/dashboard/app.py - Version Corrigée (Render + Local)
+# src/dashboard/app.py
 
 import os
 import uuid
@@ -31,24 +31,42 @@ load_custom_css()
 display_logo()
 display_header()
 
-# ===================== ENV / API URL =====================
-# Charge .env uniquement en local (évite d'écraser les variables Render)
-if not os.getenv("RENDER"):  # Render définit des variables d'env spécifiques
-    load_dotenv()
+# ===================== Helpers =====================
+def build_render_url_from_host(host: str) -> str:
+    """
+    Compose une URL publique https à partir d'un host Render.
+    Si Render fournit juste 'concrete-api', on complète en 'concrete-api.onrender.com'.
+    """
+    host = (host or "").strip()
+    if not host:
+        return ""
+    if "." not in host:
+        host = f"{host}.onrender.com"
+    return f"https://{host}"
 
-# Priorité Render: API_HOST -> API_URL -> fallback local
-_api_host = os.getenv("API_HOST", "").strip()
-_api_url_env = os.getenv("API_URL", "").strip()
-if _api_host:
-    API_URL = f"https://{_api_host}"
-elif _api_url_env:
-    API_URL = _api_url_env
-else:
-    API_URL = "http://127.0.0.1:8000"
+def resolve_api_url() -> str:
+    """
+    Priorité:
+      1) API_HOST (injection Render via render.yaml -> fromService.host)
+      2) API_URL (override manuel / local)
+      3) fallback local
+    """
+    if not os.getenv("RENDER"):
+        load_dotenv()
 
+    api_host = os.getenv("API_HOST", "").strip()
+    api_url_env = os.getenv("API_URL", "").strip()
+
+    if api_host:
+        return build_render_url_from_host(api_host)
+    if api_url_env:
+        return api_url_env
+    return "http://127.0.0.1:8000"
+
+# ===================== API URL & HTTP session =====================
+API_URL = resolve_api_url()
 st.sidebar.markdown(f"🌐 **API utilisée :** `{API_URL}`")
 
-# Session HTTP réutilisable
 SESSION = requests.Session()
 
 # ===================== User ID & logging =====================
@@ -69,6 +87,8 @@ try:
     if r.ok:
         user_count = r.json().get("unique_users_count", "N/A")
         st.sidebar.markdown(f"👥 **Utilisateurs uniques :** `{user_count}`")
+    else:
+        st.sidebar.markdown("👥 **Utilisateurs uniques :** `Service en cours...`")
 except requests.RequestException:
     st.sidebar.markdown("👥 **Utilisateurs uniques :** `Non disponible`")
 
@@ -93,7 +113,7 @@ with tab1:
                 pred = result["predicted_strengths_MPa"][0]
                 warnings = result.get("warnings", [[]])[0]
                 st.success(f"Résistance prédite : **{pred:.3f} MPa**")
-                display_warnings(warnings)  # accepte liste plate
+                display_warnings(warnings)
             else:
                 st.error(f"❌ Erreur API ({resp.status_code}): {resp.text}")
         except Exception as e:
@@ -105,7 +125,6 @@ with tab2:
     uploaded_file = st.file_uploader("Chargez un fichier CSV", type="csv", key="batch_upload")
 
     if uploaded_file:
-        # Lecture robuste (BOM + détection ; ou ; )
         df_batch_original = pd.read_csv(uploaded_file, encoding="utf-8-sig", sep=None, engine="python")
         st.dataframe(df_batch_original.head())
 
@@ -125,7 +144,6 @@ with tab2:
 
                     st.success(f"✅ {len(df_results)} prédictions générées.")
                     st.dataframe(df_results)
-                    # Affiche un récap (la fonction gère liste ou liste de listes)
                     display_warnings(warnings_list)
 
                     st.download_button(
@@ -154,10 +172,7 @@ with tab3:
 
         if st.button("Lancer l'évaluation"):
             try:
-                # Copie pour travail
                 df_eval = ensure_camel_case(df_eval_original.copy(), INPUT_NAMES_CAMEL)
-
-                # Normalise la cible
                 if "true_strength" not in df_eval.columns:
                     if "strength" in df_eval.columns:
                         df_eval.rename(columns={"strength": "true_strength"}, inplace=True)
@@ -169,16 +184,13 @@ with tab3:
                         )
                         st.stop()
 
-                # Cols requises pour l'API /evaluate
                 df_temp = df_eval[INPUT_NAMES_CAMEL + ["true_strength"]].copy()
-
                 payload = {"samples": df_temp.to_dict(orient="records")}
                 with st.spinner("Évaluation en cours..."):
                     resp = SESSION.post(f"{API_URL}/evaluate", json=payload, timeout=30)
 
                 if resp.ok:
                     result = resp.json()
-
                     st.success(f"✅ Évaluation réussie sur {result['n_samples']} échantillons.")
                     c1, c2, c3 = st.columns(3)
                     c1.metric("RMSE", f"{result['rmse']:.3f}")
@@ -196,7 +208,6 @@ with tab3:
                     st.markdown("### 📊 Résultats détaillés par ligne")
                     st.dataframe(df_results)
 
-                    # Affichage warnings ligne par ligne
                     display_warnings_by_line(warnings_list, "⚠️ Avertissements détectés par ligne")
 
                     st.download_button(

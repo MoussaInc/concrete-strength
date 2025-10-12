@@ -1,14 +1,14 @@
-# src/api/main.py — API Béton (FastAPI)
+# src/api/main.py
 
 import os
 import datetime
 import traceback
 from contextlib import asynccontextmanager
-from typing import List, Dict, Any, Tuple
+from typing import List, Tuple
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, Request, Depends, HTTPException, status
+from fastapi import FastAPI, Request, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -18,14 +18,30 @@ from sklearn.metrics import mean_absolute_error, r2_score
 from src.api.model_loader import load_model
 from src.api.schemas import (
     ConcreteFeatures, PredictionInput, PredictionOutput,
-    EvaluationInput, EvaluationSample, EvaluationOutput
+    EvaluationInput, EvaluationOutput
 )
 from src.utils.database import get_db, UsageLog, create_tables
 from src.utils.data_utils import (
     calculate_derived_features,
     apply_constraints_and_warnings,
-    ALL_FEATURES
+    ALL_FEATURES,
 )
+
+# ==============================
+# Helpers
+# ==============================
+def _render_public_origin_from_host(host: str) -> str:
+    """
+    Convertit un host Render éventuel comme 'concrete-dashboard' en
+    'https://concrete-dashboard.onrender.com'. Si 'host' a déjà un point,
+    on le considère comme pleinement qualifié.
+    """
+    host = (host or "").strip()
+    if not host:
+        return ""
+    if "." not in host:
+        host = f"{host}.onrender.com"
+    return f"https://{host}"
 
 # ==============================
 # Lifespan (init/shutdown)
@@ -46,11 +62,9 @@ async def lifespan(app: FastAPI):
         print("[MODEL] Loaded")
     except Exception as e:
         print(f"[MODEL] Load failed: {e}")
-        # Laisser lever au 1er appel pour voir l’erreur côté logs API
-        model = None
+        model = None  
 
     yield
-    # (Shutdown hook si besoin)
 
 
 app = FastAPI(
@@ -65,10 +79,13 @@ app = FastAPI(
 # ==============================
 dash_host = os.getenv("DASH_ORIGIN_HOST", "").strip()
 origins = set()
+
 if dash_host:
-    origins.update({f"https://{dash_host}", f"http://{dash_host}"})
+    origin = _render_public_origin_from_host(dash_host)
+    origins.update({origin, origin.replace("https://", "http://")})
 else:
     origins.update({"http://localhost:8501", "http://127.0.0.1:8501"})
+
 origins.update({"http://localhost", "http://127.0.0.1"})
 
 app.add_middleware(
@@ -125,22 +142,16 @@ def process_batch_data(samples: List[ConcreteFeatures]) -> Tuple[np.ndarray, Lis
     """
     # Règles métier
     is_valid_list, biz_warnings = apply_business_rules(samples)
-
     # En DataFrame
     df = pd.DataFrame([s.model_dump() for s in samples])
-
     # Feature engineering
     df = calculate_derived_features(df)
-
     # Audit (ajoute 'Warnings')
     df_audited = apply_constraints_and_warnings(df)
-
     # Alignement
     df_X = df_audited.reindex(columns=ALL_FEATURES, fill_value=np.nan)
-
     # Warnings audit
-    audit_w = df_audited.get('Warnings', pd.Series([[]] * len(df_audited))).tolist()
-
+    audit_w = df_audited.get("Warnings", pd.Series([[]] * len(df_audited))).tolist()
     # Fusion des warnings
     warnings_list: List[List[str]] = []
     for w_biz, w_aud in zip(biz_warnings, audit_w):
@@ -154,8 +165,8 @@ def process_batch_data(samples: List[ConcreteFeatures]) -> Tuple[np.ndarray, Lis
             detail={
                 "msg": f"Alignement features échoué (attendu {len(ALL_FEATURES)}, obtenu {len(df_X.columns)})",
                 "expected": ALL_FEATURES,
-                "got": list(df_X.columns)
-            }
+                "got": list(df_X.columns),
+            },
         )
 
     return df_X.values, warnings_list, is_valid_list
@@ -171,7 +182,7 @@ def log_api_request(endpoint: str, user_id: str, request: Request, db: Session):
             endpoint=endpoint,
             user_type="API" if user_id == "API" else "Dashboard",
             ip_address=(request.client.host if request and request.client else "Unknown"),
-            user_id=user_id
+            user_id=user_id,
         )
         db.add(log_entry)
         db.commit()
@@ -232,6 +243,7 @@ def predict_batch_json(input_data: PredictionInput, db: Session = Depends(get_db
         print(f"[PREDICT] Unexpected error: {traceback.format_exc()}")
         raise HTTPException(status_code=400, detail=f"Erreur lors de la prédiction : {e}")
 
+
 @app.post("/evaluate", response_model=EvaluationOutput)
 def evaluate_batch_json(input_data: EvaluationInput, db: Session = Depends(get_db), request: Request = None):
     log_api_request("/evaluate", "API", request, db)
@@ -267,7 +279,7 @@ def evaluate_batch_json(input_data: EvaluationInput, db: Session = Depends(get_d
             "r2": round(r2, 3),
             "n_samples": int(len(y_true)),
             "predicted_strengths_MPa": preds_rounded,
-            "warnings": warnings_list
+            "warnings": warnings_list,
         }
 
     except HTTPException:
