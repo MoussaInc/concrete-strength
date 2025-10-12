@@ -1,4 +1,4 @@
-# src/dashboard/app.py - Version Corrigée
+# src/dashboard/app.py - Version Corrigée (Render + Local)
 
 import os
 import uuid
@@ -18,57 +18,67 @@ from components import (
     display_warnings,
     display_warnings_by_line,
     log_dashboard_usage,
-    INPUT_NAMES_CAMEL, 
+    INPUT_NAMES_CAMEL,
     convert_df_to_api_json,
-    ensure_camel_case
+    ensure_camel_case,
 )
 
-# --- Configuration de la page ---
-st.set_page_config(
-    page_title="Concrete Strength Predictor",
-    layout="wide",
-    page_icon="🧱"
-)
+# ===================== Page config =====================
+st.set_page_config(page_title="Concrete Strength Predictor", layout="wide", page_icon="🧱")
 
-# --- Initialisation visuelle ---
+# ===================== Styles & Header =====================
 load_custom_css()
 display_logo()
 display_header()
 
-# --- Configuration API ---
-load_dotenv()
-API_URL = os.getenv("API_URL", "http://127.0.0.1:8000")
+# ===================== ENV / API URL =====================
+# Charge .env uniquement en local (évite d'écraser les variables Render)
+if not os.getenv("RENDER"):  # Render définit des variables d'env spécifiques
+    load_dotenv()
+
+# Priorité Render: API_HOST -> API_URL -> fallback local
+_api_host = os.getenv("API_HOST", "").strip()
+_api_url_env = os.getenv("API_URL", "").strip()
+if _api_host:
+    API_URL = f"https://{_api_host}"
+elif _api_url_env:
+    API_URL = _api_url_env
+else:
+    API_URL = "http://127.0.0.1:8000"
+
 st.sidebar.markdown(f"🌐 **API utilisée :** `{API_URL}`")
 
-# --- Identifiant utilisateur et Logging ---
+# Session HTTP réutilisable
+SESSION = requests.Session()
+
+# ===================== User ID & logging =====================
 if "user_uuid" not in st.session_state:
     st.session_state["user_uuid"] = str(uuid.uuid4())
 USER_ID = st.session_state["user_uuid"]
 
 if "logged" not in st.session_state:
-    log_dashboard_usage(API_URL, USER_ID)
-    st.session_state["logged"] = True
+    try:
+        SESSION.post(f"{API_URL}/log_dashboard_usage", json={"user_id": USER_ID}, timeout=5)
+        st.session_state["logged"] = True
+    except requests.RequestException:
+        st.session_state["logged"] = False  # silencieux
 
-# --- Affichage du nombre d'utilisateurs ---
+# ===================== Compteur d'utilisateurs =====================
 try:
-    response = requests.get(f"{API_URL}/get_usage_count", timeout=5)
-    if response.status_code == 200:
-        user_count = response.json().get("unique_users_count", "N/A")
+    r = SESSION.get(f"{API_URL}/get_usage_count", timeout=5)
+    if r.ok:
+        user_count = r.json().get("unique_users_count", "N/A")
         st.sidebar.markdown(f"👥 **Utilisateurs uniques :** `{user_count}`")
-    else:
-        st.sidebar.markdown("👥 **Utilisateurs uniques :** `Service en cours...`")
-except requests.exceptions.RequestException:
+except requests.RequestException:
     st.sidebar.markdown("👥 **Utilisateurs uniques :** `Non disponible`")
 
-# --- Instructions ---
+# ===================== Instructions =====================
 show_input_instructions(INPUT_NAMES_CAMEL)
 
-# --- Onglets ---
+# ===================== Tabs =====================
 tab1, tab2, tab3 = st.tabs(["Prédiction unique", "Prédiction batch (CSV)", "Évaluation batch"])
 
-# =======================================
-# Onglet 1 : Prédiction unique
-# =======================================
+# ============ Tab 1 : Prédiction unique ============
 with tab1:
     st.subheader("Entrez les paramètres du béton (8 features)")
     input_features_dict = create_input_form(INPUT_NAMES_CAMEL)
@@ -76,150 +86,129 @@ with tab1:
     if st.button("Prédire la résistance"):
         try:
             payload = {"samples": [input_features_dict]}
-            response = requests.post(f"{API_URL}/predict", json=payload, timeout=15)
-            if response.status_code == 200:
-                result = response.json()
-                pred = result['predicted_strengths_MPa'][0]
+            with st.spinner("Prédiction en cours..."):
+                resp = SESSION.post(f"{API_URL}/predict", json=payload, timeout=15)
+            if resp.ok:
+                result = resp.json()
+                pred = result["predicted_strengths_MPa"][0]
                 warnings = result.get("warnings", [[]])[0]
                 st.success(f"Résistance prédite : **{pred:.3f} MPa**")
-                display_warnings(warnings) 
+                display_warnings(warnings)  # accepte liste plate
             else:
-                st.error(f"❌ Erreur API ({response.status_code}): {response.text}")
+                st.error(f"❌ Erreur API ({resp.status_code}): {resp.text}")
         except Exception as e:
             st.error(f"❌ Erreur lors de l'appel API : {e}")
 
-# =======================================
-# Onglet 2 : Prédiction batch (CSV)
-# =======================================
+# ============ Tab 2 : Prédiction batch ============
 with tab2:
-    st.subheader("Import d'un fichier CSV pour prédiction en lot")
+    st.subheader("Import d’un fichier CSV pour prédiction en lot")
     uploaded_file = st.file_uploader("Chargez un fichier CSV", type="csv", key="batch_upload")
 
     if uploaded_file:
-        df_batch_original = pd.read_csv(uploaded_file)
+        # Lecture robuste (BOM + détection ; ou ; )
+        df_batch_original = pd.read_csv(uploaded_file, encoding="utf-8-sig", sep=None, engine="python")
         st.dataframe(df_batch_original.head())
 
         if st.button("Lancer la prédiction batch"):
             try:
-                # FIX: convert_df_to_api_json applique déjà ensure_camel_case
-                # On travaille sur une copie pour ne pas modifier l'original
                 payload = convert_df_to_api_json(df_batch_original.copy())
-                
-                response = requests.post(f"{API_URL}/predict", json=payload, timeout=30)
-                if response.status_code == 200:
-                    result = response.json()
+                with st.spinner("Prédictions en cours..."):
+                    resp = SESSION.post(f"{API_URL}/predict", json=payload, timeout=30)
+                if resp.ok:
+                    result = resp.json()
                     preds = result["predicted_strengths_MPa"]
-                    warnings_list = result["warnings"]
-                    
-                    # FIX: On crée un nouveau DataFrame avec TOUTES les colonnes originales
-                    # + les résultats, sans dupliquer le renommage
+                    warnings_list = result.get("warnings", [])
+
                     df_results = df_batch_original.copy()
                     df_results["Predicted_Strength_MPa"] = preds
-                    df_results["Warnings_Audit"] = [str(w) for w in warnings_list]
+                    df_results["Warnings_Audit"] = [str(w) if w else "" for w in warnings_list]
 
                     st.success(f"✅ {len(df_results)} prédictions générées.")
                     st.dataframe(df_results)
+                    # Affiche un récap (la fonction gère liste ou liste de listes)
                     display_warnings(warnings_list)
-                    
+
                     st.download_button(
-                        "⬇️ Télécharger les résultats", 
-                        df_results.to_csv(index=False), 
-                        "predictions_batch_results.csv", 
-                        "text/csv"
+                        "⬇️ Télécharger les résultats",
+                        df_results.to_csv(index=False).encode("utf-8-sig"),
+                        "predictions_batch_results.csv",
+                        "text/csv",
                     )
                 else:
-                    st.error(f"❌ Erreur API ({response.status_code}): {response.text}")
+                    st.error(f"❌ Erreur API ({resp.status_code}): {resp.text}")
             except Exception as e:
                 st.error(f"❌ Erreur lors de l'appel API : {e}")
 
-# =======================================
-# Onglet 3 : Évaluation modèle
-# =======================================
+# ============ Tab 3 : Évaluation ============
 with tab3:
     st.subheader("Évaluer le modèle sur des données labellisées")
     st.markdown(
-        "Le CSV doit contenir les 8 colonnes de base (n'importe quelle casse acceptée) "
-        "**+** la colonne de cible (`true_strength`, `strength` ou `Strength`)."
+        "Le CSV doit contenir les 8 colonnes de base (casse libre) **+** la cible "
+        "(`true_strength`, `strength` ou `Strength`)."
     )
     eval_file = st.file_uploader("Chargez le fichier CSV d'évaluation", type="csv", key="eval_upload")
-    
+
     if eval_file:
-        df_eval_original = pd.read_csv(eval_file)
+        df_eval_original = pd.read_csv(eval_file, encoding="utf-8-sig", sep=None, engine="python")
         st.dataframe(df_eval_original.head())
-        
+
         if st.button("Lancer l'évaluation"):
             try:
-                # Copie pour travailler sans modifier l'original
-                df_eval = df_eval_original.copy()
-                
-                # Renommage des 8 features
-                df_eval = ensure_camel_case(df_eval, INPUT_NAMES_CAMEL)
-                
-                # Normalisation de la colonne cible
-                if 'true_strength' not in df_eval.columns:
-                    if 'strength' in df_eval.columns:
-                        df_eval.rename(columns={'strength': 'true_strength'}, inplace=True)
-                    elif 'Strength' in df_eval.columns:
-                        df_eval.rename(columns={'Strength': 'true_strength'}, inplace=True)
+                # Copie pour travail
+                df_eval = ensure_camel_case(df_eval_original.copy(), INPUT_NAMES_CAMEL)
+
+                # Normalise la cible
+                if "true_strength" not in df_eval.columns:
+                    if "strength" in df_eval.columns:
+                        df_eval.rename(columns={"strength": "true_strength"}, inplace=True)
+                    elif "Strength" in df_eval.columns:
+                        df_eval.rename(columns={"Strength": "true_strength"}, inplace=True)
                     else:
                         st.error(
-                            "❌ Le fichier doit contenir la colonne de résistance cible, "
-                            "nommée 'true_strength', 'strength' ou 'Strength'."
+                            "❌ Le fichier doit contenir la colonne cible 'true_strength' (ou 'strength' / 'Strength')."
                         )
                         st.stop()
 
-                # Sélection des colonnes nécessaires
-                df_temp = df_eval[INPUT_NAMES_CAMEL + ['true_strength']].copy()
-                
-                # Création du payload
-                payload_samples = df_temp.to_dict(orient='records')
-                payload = {"samples": payload_samples}
-                
-                # Appel à l'API /evaluate
-                response = requests.post(f"{API_URL}/evaluate", json=payload, timeout=30)
-                if response.status_code == 200:
-                    result = response.json()
-                    
-                    # Affichage des métriques
+                # Cols requises pour l'API /evaluate
+                df_temp = df_eval[INPUT_NAMES_CAMEL + ["true_strength"]].copy()
+
+                payload = {"samples": df_temp.to_dict(orient="records")}
+                with st.spinner("Évaluation en cours..."):
+                    resp = SESSION.post(f"{API_URL}/evaluate", json=payload, timeout=30)
+
+                if resp.ok:
+                    result = resp.json()
+
                     st.success(f"✅ Évaluation réussie sur {result['n_samples']} échantillons.")
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("RMSE", f"{result['rmse']:.3f}")
-                    col2.metric("MAE", f"{result['mae']:.3f}")
-                    col3.metric("R²", f"{result['r2']:.3f}")
-                    
-                    # Récupération des prédictions et warnings
+                    c1, c2, c3 = st.columns(3)
+                    c1.metric("RMSE", f"{result['rmse']:.3f}")
+                    c2.metric("MAE", f"{result['mae']:.3f}")
+                    c3.metric("R²", f"{result['r2']:.3f}")
+
                     predictions = result.get("predicted_strengths_MPa", [])
                     warnings_list = result.get("warnings", [])
-                    
-                    # Création du DataFrame de résultats avec toutes les colonnes originales
+
                     df_results = df_eval_original.copy()
-                    
-                    # Ajout des prédictions (si disponibles)
                     if predictions:
                         df_results["Predicted_Strength_MPa"] = predictions
-                    
-                    # Ajout de la colonne Warnings_Audit
                     df_results["Warnings_Audit"] = [str(w) if w else "" for w in warnings_list]
-                    
-                    # Affichage du DataFrame avec les résultats
+
                     st.markdown("### 📊 Résultats détaillés par ligne")
                     st.dataframe(df_results)
-                    
-                    # Affichage des warnings par ligne avec la fonction dédiée
+
+                    # Affichage warnings ligne par ligne
                     display_warnings_by_line(warnings_list, "⚠️ Avertissements détectés par ligne")
-                    
-                    # Bouton de téléchargement
+
                     st.download_button(
                         "⬇️ Télécharger les résultats d'évaluation",
-                        df_results.to_csv(index=False),
+                        df_results.to_csv(index=False).encode("utf-8-sig"),
                         "evaluation_results.csv",
-                        "text/csv"
+                        "text/csv",
                     )
-                    
                 else:
-                    st.error(f"❌ Erreur API ({response.status_code}): {response.text}")
+                    st.error(f"❌ Erreur API ({resp.status_code}): {resp.text}")
             except Exception as e:
                 st.error(f"❌ Erreur lors de l'appel API : {e}")
 
-# --- Footer ---
+# ===================== Footer =====================
 display_footer()
