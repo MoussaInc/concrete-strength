@@ -1,0 +1,40 @@
+# render.yaml
+services:
+  - type: web
+    name: concrete-api
+    env: docker
+    repo: https://github.com/MoussaInc/concrete-strength 
+    region: frankfurt               
+    plan: free                       
+    dockerfilePath: docker/api/Dockerfile
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: DASH_ORIGIN             
+        value: https://concrete-dashboard.onrender.com   # ← mettra à jour après création (ou "*")
+      # Si tu as une DB:
+      # - key: DB_HOST
+      #   value: ***
+      # - key: DB_PORT
+      #   value: "5432"
+      # - key: DB_NAME
+      #   value: ***
+      # - key: DB_USER
+      #   value: ***
+      # - key: DB_PASSWORD
+      #   sync: false    # pour saisir en secret dans Render
+
+  - type: web
+    name: concrete-dashboard
+    env: docker
+    repo: https://github.com/MoussaInc/concrete-strength
+    region: frankfurt
+    plan: free
+    dockerfilePath: docker/dashboard/Dockerfile
+    autoDeploy: true
+    envVars:
+      - key: API_URL
+        fromService:
+          type: web
+          name: concrete-api
+          property: url
