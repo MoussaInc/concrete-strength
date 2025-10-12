@@ -17,7 +17,7 @@ services:
     ports:
       - "5433:5432"
 
-  # Service de l'API FastAPI
+  # Service de l'API FastAPI (Backend)
   api:
     build:
       context: .
@@ -29,16 +29,18 @@ services:
     env_file:
       - .env
     environment:
-      PG_HOST: postgres
+      # Configuration de la connexion à la base de données
+      PG_HOST: postgres 
       PG_PORT: 5432
       PG_USER: ${POSTGRES_USER}
       PG_PASSWORD: ${POSTGRES_PASSWORD}
       PG_DATABASE: ${POSTGRES_DB}
+      # URL de l'API utilisée en interne par le dashboard
       API_URL: http://api:8000
     depends_on:
       - postgres
 
-  # Service du Dashboard Streamlit
+  # Service du Dashboard Streamlit (Frontend)
   dashboard:
     build:
       context: .
@@ -54,9 +56,9 @@ services:
     volumes:
       - ./src/dashboard:/app/src/dashboard
       - ./src/utils:/app/src/utils
+      - ./src/dashboard/static:/app/src/dashboard/static
     depends_on:
       - api
-    command: bash -c "streamlit run src/dashboard/app.py --server.port 8501 --server.address 0.0.0.0"
 
 volumes:
   pg_data:
