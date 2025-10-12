@@ -7,6 +7,7 @@ import streamlit as st
 import requests
 from dotenv import load_dotenv
 import numpy as np
+import time
 
 from components import (
     load_custom_css,
@@ -82,15 +83,26 @@ if "logged" not in st.session_state:
         st.session_state["logged"] = False  # silencieux
 
 # ===================== Compteur d'utilisateurs =====================
-try:
-    r = SESSION.get(f"{API_URL}/get_usage_count", timeout=5)
-    if r.ok:
-        user_count = r.json().get("unique_users_count", "N/A")
-        st.sidebar.markdown(f"👥 **Utilisateurs uniques :** `{user_count}`")
-    else:
-        st.sidebar.markdown("👥 **Utilisateurs uniques :** `Service en cours...`")
-except requests.RequestException:
+def fetch_usage_count(api_url: str, tries: int = 3, timeout: float = 6.0):
+    last_err = None
+    for i in range(tries):
+        try:
+            r = SESSION.get(f"{api_url}/get_usage_count", timeout=timeout)
+            if r.ok:
+                return r.json().get("unique_users_count", "N/A")
+            last_err = f"HTTP {r.status_code} - {r.text[:120]}"
+        except requests.RequestException as e:
+            last_err = str(e)
+        time.sleep(0.6 * (i + 1)) 
+    return f"ERR: {last_err}"
+
+count_or_err = fetch_usage_count(API_URL)
+if isinstance(count_or_err, (int, float)) or (isinstance(count_or_err, str) and count_or_err.isdigit()):
+    st.sidebar.markdown(f"👥 **Utilisateurs uniques :** `{count_or_err}`")
+elif isinstance(count_or_err, str) and count_or_err.startswith("ERR:"):
     st.sidebar.markdown("👥 **Utilisateurs uniques :** `Non disponible`")
+else:
+    st.sidebar.markdown("👥 **Utilisateurs uniques :** `N/A`")
 
 # ===================== Instructions =====================
 show_input_instructions(INPUT_NAMES_CAMEL)
