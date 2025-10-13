@@ -14,12 +14,10 @@ services:
     autoDeploy: true
     healthCheckPath: /health
     envVars:
-      # If using Render Postgres
       - key: DATABASE_URL
         fromDatabase:
           name: concrete-db
           property: connectionString
-      # CORS: pass dashboard host, build full origin in code
       - key: DASH_ORIGIN_HOST
         fromService:
           type: web
@@ -35,7 +33,6 @@ services:
     dockerfilePath: docker/dashboard/Dockerfile
     autoDeploy: true
     envVars:
-      # Get API host, build full URL in code
       - key: API_HOST
         fromService:
           type: web

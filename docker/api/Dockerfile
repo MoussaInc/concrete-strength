@@ -39,5 +39,6 @@ EXPOSE 8000
 
 # --- Commande de lancement (prod) ---
 # Gunicorn + UvicornWorker = robuste en prod, 2 workers en CPU limité (ajuste selon besoin)
-CMD ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "-w", "2", "-b", "0.0.0.0:8000", "src.api.main:app"]
+CMD ["sh", "-c", "gunicorn -k uvicorn.workers.UvicornWorker -w 1 --timeout 120 -b 0.0.0.0:${PORT:-8000} src.api.main:app"]
+
 

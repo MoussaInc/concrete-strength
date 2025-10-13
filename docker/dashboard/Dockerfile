@@ -42,4 +42,5 @@ HEALTHCHECK --interval=30s --timeout=3s --retries=5 \
   CMD curl -fsS http://localhost:8501/_stcore/health || exit 1
 
 # ---- Démarrage ----
-CMD ["streamlit", "run", "src/dashboard/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+CMD ["sh", "-c", "streamlit run src/dashboard/app.py --server.address 0.0.0.0 --server.port ${PORT:-8501}"]
+
