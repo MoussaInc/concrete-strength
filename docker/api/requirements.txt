@@ -1,14 +1,22 @@
-fastapi
-uvicorn[standard]
-gunicorn
-streamlit
-pandas
+# Serveur
+fastapi>=0.115,<1
+uvicorn[standard]>=0.30
+gunicorn>=21
+
+# Data science
+pandas>=2.2
 numpy>=1.26,<2.0
 scikit-learn==1.5.2
-xgboost==1.7.6
-sqlalchemy
-psycopg2-binary
+xgboost>=2.0.3  # ou 2.1.1+
+
+# Base de données (psycopg3 conseillé)
+sqlalchemy>=2.0
+psycopg[binary]>=3.1
+
+# Utilitaires
 python-dotenv
 requests
+
+# Build tools (optionnel selon Render, mais garde-les si besoin)
 setuptools>=68
 wheel>=0.41

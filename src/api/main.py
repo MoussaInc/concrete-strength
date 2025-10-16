@@ -30,6 +30,24 @@ from src.utils.data_utils import (
 # ==============================
 # Helpers
 # ==============================
+
+model = None
+model_load_error = None
+
+def get_model():
+    global model, model_load_error
+    if model is None and model_load_error is None:
+        try:
+            print("[MODEL] Loading (lazy)...")
+            model = load_model()
+            print("[MODEL] Loaded")
+        except Exception as e:
+            model_load_error = e
+            print(f"[MODEL] Load failed (lazy): {e}")
+            raise
+    return model
+
+
 def _render_public_origin_from_host(host: str) -> str:
     """
     Convertit un host Render éventuel comme 'concrete-dashboard' en
@@ -54,15 +72,6 @@ async def lifespan(app: FastAPI):
         print("[DB] Tables ready")
     except Exception as e:
         print(f"[DB] Init skipped/failed: {e}")
-
-    # Load model
-    global model
-    try:
-        model = load_model()
-        print("[MODEL] Loaded")
-    except Exception as e:
-        print(f"[MODEL] Load failed: {e}")
-        model = None  
 
     yield
 
@@ -199,7 +208,12 @@ def root():
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "timestamp": datetime.datetime.utcnow()}
+    return {
+        "status": "healthy",
+        "timestamp": datetime.datetime.utcnow(),
+        "model_loaded": (model is not None),
+        "model_error": str(model_load_error) if model_load_error else None,
+    }
 
 @app.post("/log_dashboard_usage")
 def log_dashboard_usage_endpoint(data: DashboardLog, request: Request, db: Session = Depends(get_db)):
@@ -222,14 +236,16 @@ def get_usage_count(db: Session = Depends(get_db)):
 def predict_batch_json(input_data: PredictionInput, db: Session = Depends(get_db), request: Request = None):
     log_api_request("/predict", "API", request, db)
 
-    if model is None:
+    try:
+        m = get_model()
+    except Exception:
         raise HTTPException(status_code=503, detail="Modèle indisponible sur le serveur.")
 
     try:
         X, warnings_list, is_valid = process_batch_data(input_data.samples)
 
         # Prédiction
-        y_pred = np.array(model.predict(X), dtype=float)
+        y_pred = np.array(m.predict(X), dtype=float)
         y_pred = np.clip(y_pred, a_min=0.0, a_max=None)
 
         # Application règle métier (force 0 si invalide)
@@ -248,9 +264,11 @@ def predict_batch_json(input_data: PredictionInput, db: Session = Depends(get_db
 def evaluate_batch_json(input_data: EvaluationInput, db: Session = Depends(get_db), request: Request = None):
     log_api_request("/evaluate", "API", request, db)
 
-    if model is None:
+    try:
+        m = get_model()
+    except Exception:
         raise HTTPException(status_code=503, detail="Modèle indisponible sur le serveur.")
-
+  
     try:
         # Extraire features sans la cible
         samples_features: List[ConcreteFeatures] = [
@@ -261,7 +279,7 @@ def evaluate_batch_json(input_data: EvaluationInput, db: Session = Depends(get_d
 
         X, warnings_list, is_valid = process_batch_data(samples_features)
 
-        y_pred = np.array(model.predict(X), dtype=float)
+        y_pred = np.array(m.predict(X), dtype=float)
         y_pred = np.clip(y_pred, a_min=0.0, a_max=None)
 
         final_preds = np.array([0.0 if not ok else float(p) for p, ok in zip(y_pred, is_valid)], dtype=float)
