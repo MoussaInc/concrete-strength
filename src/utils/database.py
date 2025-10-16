@@ -7,60 +7,61 @@ from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 
-try:
-    import psycopg 
-    _PSYCOPG3 = True
-except Exception:
-    _PSYCOPG3 = False
+_ENGINE = None
+_SessionLocal = None
 
-# ------------- Helpers URL ------------- #
+Base = declarative_base()
+
 def _normalize_pg_url(url: str) -> str:
-    """
-    - Convertit 'postgres://' -> 'postgresql://'
-    - Ajoute le driver si psycopg3 dispo: 'postgresql+psycopg://'
-    - Force sslmode=require si absent (utile sur Render)
-    """
     if not url:
         return url
     if url.startswith("postgres://"):
         url = "postgresql://" + url[len("postgres://"):]
-    if _PSYCOPG3 and url.startswith("postgresql://"):
-        url = "postgresql+psycopg://" + url[len("postgresql://"):]
     try:
-        parsed = urlparse(url)
-        q = dict(parse_qsl(parsed.query))
-        if "sslmode" not in q and parsed.scheme.startswith("postgresql"):
-            q["sslmode"] = "require"
-        new_query = urlencode(q)
-        url = urlunparse(parsed._replace(query=new_query))
+        p = urlparse(url)
+        q = dict(parse_qsl(p.query))
+        q.setdefault("sslmode", "require")
+        url = urlunparse(p._replace(query=urlencode(q)))
     except Exception:
         pass
-
     return url
 
-# ------------- Configuration ------------- #
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-if not DATABASE_URL:
-    pg_host = os.getenv("PG_HOST", "127.0.0.1")
-    pg_port = int(os.getenv("PG_PORT", 5432))
-    pg_user = os.getenv("PG_USER", "mballo")
-    pg_password = os.getenv("PG_PASSWORD", "supersecretpassword")
-    pg_database = os.getenv("PG_DATABASE", "concrete_db")
-    DATABASE_URL = f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_database}"
+def _db_url() -> str:
+    url = (os.getenv("DATABASE_URL") or "").strip()
+    if not url:
+        host = os.getenv("PG_HOST", "127.0.0.1")
+        port = int(os.getenv("PG_PORT", 5432))
+        user = os.getenv("PG_USER", "mballo")
+        pwd  = os.getenv("PG_PASSWORD", "supersecretpassword")
+        db   = os.getenv("PG_DATABASE", "concrete_db")
+        url = f"postgresql://{user}:{pwd}@{host}:{port}/{db}"
+    return _normalize_pg_url(url)
 
-DATABASE_URL = _normalize_pg_url(DATABASE_URL)
-ENGINE_KW = dict(
-    pool_pre_ping=True,
-    pool_recycle=1800,    
-    pool_size=2,
-    max_overflow=0,       
-    connect_args={"connect_timeout": 5},
-)
+def _ensure_engine():
+    """
+    Crée engine + SessionLocal à la demande. Ne lève pas d'exception bloquante.
+    """
+    global _ENGINE, _SessionLocal
+    if _ENGINE is not None and _SessionLocal is not None:
+        return _ENGINE, _SessionLocal
+    try:
+        url = _db_url()
+        _ENGINE = create_engine(
+            url,
+            pool_pre_ping=True,
+            pool_recycle=1800,
+            pool_size=2,
+            max_overflow=0,
+            connect_args={"connect_timeout": 5},
+        )
+        _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_ENGINE)
+        return _ENGINE, _SessionLocal
+    except Exception as e:
+        print(f"[DB] Engine init failed (non-fatal): {e}")
+        _ENGINE, _SessionLocal = None, None
+        return None, None
 
-engine = create_engine(DATABASE_URL, **ENGINE_KW)
-Base = declarative_base()
-
-# ------------- Modèles ------------- #
+# --- Modèle ---
 class UsageLog(Base):
     __tablename__ = "usage_logs"
     id = Column(Integer, primary_key=True, index=True)
@@ -70,26 +71,31 @@ class UsageLog(Base):
     ip_address = Column(String)
     user_id = Column(String, index=True, nullable=False)
 
-# ------------- Création tables (best effort) ------------- #
+# --- Best-effort create ---
 def create_tables():
-    """
-    À appeler au boot (best-effort).
-    Ne doit PAS faire planter l'app si la DB n'est pas prête.
-    """
+    engine, _ = _ensure_engine()
+    if engine is None:
+        print("[DB] create_tables skipped: engine unavailable")
+        return
     try:
         Base.metadata.create_all(bind=engine)
         print("[DB] Tables created or already exist.")
     except Exception as e:
-        print(f"[DB] create_tables skipped/failed: {e}")
+        print(f"[DB] create_tables failed: {e}")
 
-# ------------- Session ------------- #
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-
+# --- Dépendance FastAPI (best-effort) ---
 def get_db():
-    """
-    Renvoie une session SQLAlchemy.
-    Note: la connexion réelle ne se fait qu'à la première requête SQL.
-    """
+    engine, SessionLocal = _ensure_engine()
+    if SessionLocal is None:
+        class _Null:
+            def __getattr__(self, name): raise AttributeError(name)
+        db = _Null()
+        try:
+            yield db
+        finally:
+            pass
+        return
+
     db = SessionLocal()
     try:
         yield db
