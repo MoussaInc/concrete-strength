@@ -1,14 +1,45 @@
+# src/utils/database.py
+
 import os
 import datetime
+from urllib.parse import urlparse, urlunparse, parse_qsl, urlencode
+
 from sqlalchemy import create_engine, Column, Integer, String, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from dotenv import load_dotenv
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-# Chargement des variables d'environnement
-load_dotenv()
+try:
+    import psycopg 
+    _PSYCOPG3 = True
+except Exception:
+    _PSYCOPG3 = False
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# ------------- Helpers URL ------------- #
+def _normalize_pg_url(url: str) -> str:
+    """
+    - Convertit 'postgres://' -> 'postgresql://'
+    - Ajoute le driver si psycopg3 dispo: 'postgresql+psycopg://'
+    - Force sslmode=require si absent (utile sur Render)
+    """
+    if not url:
+        return url
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if _PSYCOPG3 and url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    try:
+        parsed = urlparse(url)
+        q = dict(parse_qsl(parsed.query))
+        if "sslmode" not in q and parsed.scheme.startswith("postgresql"):
+            q["sslmode"] = "require"
+        new_query = urlencode(q)
+        url = urlunparse(parsed._replace(query=new_query))
+    except Exception:
+        pass
+
+    return url
+
+# ------------- Configuration ------------- #
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 if not DATABASE_URL:
     pg_host = os.getenv("PG_HOST", "127.0.0.1")
     pg_port = int(os.getenv("PG_PORT", 5432))
@@ -17,13 +48,19 @@ if not DATABASE_URL:
     pg_database = os.getenv("PG_DATABASE", "concrete_db")
     DATABASE_URL = f"postgresql://{pg_user}:{pg_password}@{pg_host}:{pg_port}/{pg_database}"
 
-# Création du moteur SQLAlchemy
-engine = create_engine(DATABASE_URL)
+DATABASE_URL = _normalize_pg_url(DATABASE_URL)
+ENGINE_KW = dict(
+    pool_pre_ping=True,
+    pool_recycle=1800,    
+    pool_size=2,
+    max_overflow=0,       
+    connect_args={"connect_timeout": 5},
+)
+
+engine = create_engine(DATABASE_URL, **ENGINE_KW)
 Base = declarative_base()
 
-# -------------------------------
-# Modèle UsageLog
-# -------------------------------
+# ------------- Modèles ------------- #
 class UsageLog(Base):
     __tablename__ = "usage_logs"
     id = Column(Integer, primary_key=True, index=True)
@@ -33,27 +70,31 @@ class UsageLog(Base):
     ip_address = Column(String)
     user_id = Column(String, index=True, nullable=False)
 
-# -------------------------------
-# Création des tables
-# -------------------------------
+# ------------- Création tables (best effort) ------------- #
 def create_tables():
-    Base.metadata.create_all(bind=engine)
-    print("Tables de BDD créées ou déjà existantes.")
+    """
+    À appeler au boot (best-effort).
+    Ne doit PAS faire planter l'app si la DB n'est pas prête.
+    """
+    try:
+        Base.metadata.create_all(bind=engine)
+        print("[DB] Tables created or already exist.")
+    except Exception as e:
+        print(f"[DB] create_tables skipped/failed: {e}")
 
-# -------------------------------
-# Session SQLAlchemy
-# -------------------------------
+# ------------- Session ------------- #
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 def get_db():
+    """
+    Renvoie une session SQLAlchemy.
+    Note: la connexion réelle ne se fait qu'à la première requête SQL.
+    """
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
 
-# -------------------------------
-# Lancement directement pour creation des tables
-# -------------------------------
 if __name__ == "__main__":
     create_tables()
