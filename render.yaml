@@ -22,7 +22,7 @@ services:
         fromService:
           type: web
           name: concrete-dashboard
-          property: host
+          property: https://concrete-api.onrender.com
 
   - type: web
     name: concrete-dashboard
@@ -37,4 +37,4 @@ services:
         fromService:
           type: web
           name: concrete-api
-          property: host
+          property: https://concrete-dashboard.onrender.com

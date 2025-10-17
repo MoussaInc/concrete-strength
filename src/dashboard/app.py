@@ -2,12 +2,15 @@
 
 import os
 import uuid
+import time
 import pandas as pd
 import streamlit as st
 import requests
 from dotenv import load_dotenv
 import numpy as np
-import time
+
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from components import (
     load_custom_css,
@@ -33,42 +36,87 @@ display_logo()
 display_header()
 
 # ===================== Helpers =====================
-def build_render_url_from_host(host: str) -> str:
+def is_full_url(s: str) -> bool:
+    return isinstance(s, str) and (s.startswith("http://") or s.startswith("https://"))
+
+def build_render_url_from_host(host_or_url: str) -> str:
     """
-    Compose une URL publique https à partir d'un host Render.
-    Si Render fournit juste 'concrete-api', on complète en 'concrete-api.onrender.com'.
+    Avec render.yaml (property: url), API_HOST peut déjà être une URL complète.
+    Sinon, si c'est un hostname (ex: 'concrete-api'), on génère https://<host>.onrender.com
     """
-    host = (host or "").strip()
-    if not host:
+    host_or_url = (host_or_url or "").strip()
+    if not host_or_url:
         return ""
-    if "." not in host:
-        host = f"{host}.onrender.com"
-    return f"https://{host}"
+    if is_full_url(host_or_url):
+        return host_or_url
+    if "." not in host_or_url:
+        host_or_url = f"{host_or_url}.onrender.com"
+    return f"https://{host_or_url}"
 
 def resolve_api_url() -> str:
     """
     Priorité:
-      1) API_HOST (injection Render via render.yaml -> fromService.host)
-      2) API_URL (override manuel / local)
+      1) API_URL (override manuel complet ou hostname)
+      2) API_HOST (injection Render via render.yaml -> fromService.url ou host)
       3) fallback local
     """
+    # En local (pas sur Render), on lit .env si présent
     if not os.getenv("RENDER"):
         load_dotenv()
 
-    api_host = os.getenv("API_HOST", "").strip()
     api_url_env = os.getenv("API_URL", "").strip()
+    if api_url_env:
+        return api_url_env if is_full_url(api_url_env) else build_render_url_from_host(api_url_env)
 
+    api_host = os.getenv("API_HOST", "").strip()
     if api_host:
         return build_render_url_from_host(api_host)
-    if api_url_env:
-        return api_url_env
+
     return "http://127.0.0.1:8000"
+
+def make_session_with_retries(total=5, backoff=0.6) -> requests.Session:
+    """
+    Session requests avec retries sur 502/503/504 pour absorber le cold start Render.
+    """
+    retry = Retry(
+        total=total,
+        connect=total,
+        read=total,
+        status=total,
+        backoff_factor=backoff,
+        status_forcelist=(502, 503, 504),
+        allowed_methods=frozenset(["GET", "POST", "PUT", "DELETE", "OPTIONS", "HEAD", "PATCH"]),
+        raise_on_status=False,
+    )
+    s = requests.Session()
+    adapter = HTTPAdapter(max_retries=retry)
+    s.mount("http://", adapter)
+    s.mount("https://", adapter)
+    return s
+
+def warm_api(api_url: str, session: requests.Session):
+    """
+    Réveille l'API: GET /health puis POST /warmup (si exposé côté API).
+    Silencieux en cas d'échec.
+    """
+    try:
+        session.get(f"{api_url}/health", timeout=5)
+    except requests.RequestException:
+        pass
+    try:
+        session.post(f"{api_url}/warmup", timeout=15)
+    except requests.RequestException:
+        pass
 
 # ===================== API URL & HTTP session =====================
 API_URL = resolve_api_url()
+SESSION = make_session_with_retries()
+
+# Affiche l'URL utilisée en sidebar
 st.sidebar.markdown(f"🌐 **API utilisée :** `{API_URL}`")
 
-SESSION = requests.Session()
+# Warmup discret (cold start)
+warm_api(API_URL, SESSION)
 
 # ===================== User ID & logging =====================
 if "user_uuid" not in st.session_state:
@@ -93,7 +141,7 @@ def fetch_usage_count(api_url: str, tries: int = 3, timeout: float = 6.0):
             last_err = f"HTTP {r.status_code} - {r.text[:120]}"
         except requests.RequestException as e:
             last_err = str(e)
-        time.sleep(0.6 * (i + 1)) 
+        time.sleep(0.6 * (i + 1))
     return f"ERR: {last_err}"
 
 count_or_err = fetch_usage_count(API_URL)
@@ -119,7 +167,7 @@ with tab1:
         try:
             payload = {"samples": [input_features_dict]}
             with st.spinner("Prédiction en cours..."):
-                resp = SESSION.post(f"{API_URL}/predict", json=payload, timeout=15)
+                resp = SESSION.post(f"{API_URL}/predict", json=payload, timeout=30)
             if resp.ok:
                 result = resp.json()
                 pred = result["predicted_strengths_MPa"][0]
@@ -127,7 +175,7 @@ with tab1:
                 st.success(f"Résistance prédite : **{pred:.3f} MPa**")
                 display_warnings(warnings)
             else:
-                st.error(f"❌ Erreur API ({resp.status_code}): {resp.text}")
+                st.error(f"❌ Erreur API ({resp.status_code}): {resp.text[:200]}")
         except Exception as e:
             st.error(f"❌ Erreur lors de l'appel API : {e}")
 
@@ -144,7 +192,7 @@ with tab2:
             try:
                 payload = convert_df_to_api_json(df_batch_original.copy())
                 with st.spinner("Prédictions en cours..."):
-                    resp = SESSION.post(f"{API_URL}/predict", json=payload, timeout=30)
+                    resp = SESSION.post(f"{API_URL}/predict", json=payload, timeout=60)
                 if resp.ok:
                     result = resp.json()
                     preds = result["predicted_strengths_MPa"]
@@ -165,7 +213,7 @@ with tab2:
                         "text/csv",
                     )
                 else:
-                    st.error(f"❌ Erreur API ({resp.status_code}): {resp.text}")
+                    st.error(f"❌ Erreur API ({resp.status_code}): {resp.text[:200]}")
             except Exception as e:
                 st.error(f"❌ Erreur lors de l'appel API : {e}")
 
@@ -191,15 +239,13 @@ with tab3:
                     elif "Strength" in df_eval.columns:
                         df_eval.rename(columns={"Strength": "true_strength"}, inplace=True)
                     else:
-                        st.error(
-                            "❌ Le fichier doit contenir la colonne cible 'true_strength' (ou 'strength' / 'Strength')."
-                        )
+                        st.error("❌ Le fichier doit contenir la colonne cible 'true_strength' (ou 'strength' / 'Strength').")
                         st.stop()
 
                 df_temp = df_eval[INPUT_NAMES_CAMEL + ["true_strength"]].copy()
                 payload = {"samples": df_temp.to_dict(orient="records")}
                 with st.spinner("Évaluation en cours..."):
-                    resp = SESSION.post(f"{API_URL}/evaluate", json=payload, timeout=30)
+                    resp = SESSION.post(f"{API_URL}/evaluate", json=payload, timeout=60)
 
                 if resp.ok:
                     result = resp.json()
@@ -229,7 +275,7 @@ with tab3:
                         "text/csv",
                     )
                 else:
-                    st.error(f"❌ Erreur API ({resp.status_code}): {resp.text}")
+                    st.error(f"❌ Erreur API ({resp.status_code}): {resp.text[:200]}")
             except Exception as e:
                 st.error(f"❌ Erreur lors de l'appel API : {e}")
 
